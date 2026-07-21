@@ -1,21 +1,8 @@
-# GPT Image Hair Color Edit
+# gpt-image
 
-Small Python CLI for using OpenAI's image edit API to change only a subject's hair color while preserving eyebrows and the rest of the photo.
+General-purpose command-line tool for OpenAI's image models (`gpt-image-2` by default): generate images from prompts, edit existing images, and run batches from a JSON manifest.
 
-The default prompt is tuned for realistic hair-color edits. It asks the model to keep the face, skin tone, expression, eyes, hands, jewelry, clothing, background, lighting, framing, and photo texture intact.
-
-## Project Context
-
-This started as a command-line workaround. I wanted to try the leading image-edit model shown on [Arena's image edit leaderboard](https://arena.ai/leaderboard/image-edit), but I did not find a straightforward way to run that exact workflow from OpenAI's browser apps. So I used the OpenAI API from the command line and worked through the edit with Codex CLI using GPT-5.5.
-
-## What It Does
-
-- Uses `gpt-image-2` through OpenAI's image edit API.
-- Defaults to `quality=medium`.
-- Writes a PNG output file.
-- Lets you choose the target hair color.
-- Explicitly instructs the model not to change eyebrows.
-- Keeps images and local API key files out of git by default.
+Started as a hair-color photo-edit workaround ([Arena's image edit leaderboard](https://arena.ai/leaderboard/image-edit) via the API instead of the browser apps, worked through with Codex CLI using GPT-5.5); now a general tool. The original `edit_hair_color.py` still works as before.
 
 ## Setup
 
@@ -23,62 +10,65 @@ This started as a command-line workaround. I wanted to try the leading image-edi
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-```
-
-Set your API key in the shell:
-
-```bash
 export OPENAI_API_KEY="<your_openai_api_key>"
 ```
 
-Or keep it in a local file outside the repo and pass `--api-key-file`.
+Or keep the key in a local file outside the repo and pass `--api-key-file ~/path/to/key.txt` to any command.
 
 ## Usage
 
-Basic usage:
+Generate:
 
 ```bash
-python edit_hair_color.py /path/to/photo.jpg \
-  --output /path/to/edited.png \
-  --color "strawberry blonde"
+python gpt_image.py generate "a lighthouse in a storm, gouache" \
+  --output lighthouse.png --quality high --size 1536x1024
 ```
 
-Using a local key file:
+Edit (one or more input images):
 
 ```bash
-python edit_hair_color.py /path/to/photo.jpg \
-  --output /path/to/edited.png \
-  --color "strawberry blonde" \
-  --api-key-file ~/Documents/openai-key.txt
+python gpt_image.py edit photo.jpg --prompt "make the sky golden hour" --output golden.png
 ```
 
-Changing the target color:
+Batch from a manifest:
 
 ```bash
-python edit_hair_color.py /path/to/photo.jpg \
-  --output /path/to/auburn.png \
-  --color "soft auburn"
+python gpt_image.py batch manifest.json --output-dir outputs \
+  --quality high --size 1536x1024 --workers 3 --skip-existing
 ```
 
-Adding an extra prompt instruction:
+`--dry-run` prints the plan without calling the API.
+
+## Manifest format
+
+A JSON list (or an object with an `"images"` list). Each item needs a `prompt`; everything else is optional:
+
+```json
+[
+  {"id": "cover", "prompt": "a stone house on a sea cliff at dawn"},
+  {"id": "recolor", "prompt": "make the door red", "edit_from": "inputs/house.png",
+   "quality": "medium", "size": "1024x1024", "output": "outputs/red-door.png"}
+]
+```
+
+- `id` names the output file (`<output-dir>/<id>.<format>`) when `output` is not set.
+- `edit_from` (path or list of paths) switches that item from generate to edit.
+- Per-item `quality`/`size` override the command-line flags.
+- Failed items retry twice with backoff; the exit code is non-zero if any item still fails.
+
+## Hair-color legacy script
 
 ```bash
-python edit_hair_color.py /path/to/photo.jpg \
-  --output /path/to/edited.png \
-  --color "strawberry blonde" \
-  --extra-instruction "Keep the color subtle and natural-looking."
+python edit_hair_color.py photo.jpg --output edited.png --color "strawberry blonde"
 ```
 
 ## Defaults
 
-- Model: `gpt-image-2`
-- Quality: `medium`
-- Output format: `png`
-- The prompt explicitly says not to change eyebrows.
+- Model `gpt-image-2`, quality `auto`, size `auto`, format `png`.
 
 ## Privacy
 
-This repo is meant to stay code-only. Do not commit input photos, edited outputs, API keys, or raw API response files. The included `.gitignore` excludes common image formats, `inputs/`, `outputs/`, local key files, and response JSON by default.
+This repo stays code-only. The `.gitignore` excludes common image formats, `inputs/`, `outputs/`, local key files, and response JSON. Do not commit inputs, outputs, or API keys.
 
 ## License
 
