@@ -66,6 +66,18 @@ python edit_hair_color.py photo.jpg --output edited.png --color "strawberry blon
 
 - Model `gpt-image-2`, quality `auto`, size `auto`, format `png`.
 
+## Cost in CLI output
+
+After each generate/edit (and each batch item), the CLI prints an **estimated** USD cost from the Images API `usage` tokens and published OpenAI per-token rates (standard tier). The API does not return a dollar amount directly.
+
+Example:
+
+```text
+Wrote lighthouse.png · ~$0.0531 est. · tokens in=18 out=1760 (text_in=18, img_out=1760) · 41s
+```
+
+Use `--no-cost` to suppress usage/cost lines. Rates live in `PRICING_PER_1M` in `gpt_image.py` and may lag OpenAI's pricing page.
+
 ## Privacy
 
 This repo stays code-only. The `.gitignore` excludes common image formats, `inputs/`, `outputs/`, local key files, and response JSON. Do not commit inputs, outputs, or API keys.
