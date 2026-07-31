@@ -37,13 +37,23 @@ cd gpt-image
 go build -o gpt-image ./cmd/gpt-image
 ```
 
-### API key
+### API key (required)
+
+Every `generate`, `edit`, and `batch` call needs an OpenAI API key with access to image models. Create one in the [OpenAI dashboard](https://platform.openai.com/api-keys). Without a key the CLI exits with `missing API key`.
 
 ```bash
 export OPENAI_API_KEY="<your_openai_api_key>"
 ```
 
-Or keep the key in a local file outside the repo and pass `--api-key-file ~/path/to/key.txt` to any command.
+Or keep the key in a local file outside the repo (preferred if you do not want it in shell history) and pass the file to any command:
+
+```bash
+gpt-image generate "a lighthouse in a storm, gouache" \
+  --api-key-file ~/path/to/key.txt \
+  --output lighthouse.png
+```
+
+Do not commit API keys. The repo `.gitignore` already excludes common local key filenames.
 
 ## Usage
 
