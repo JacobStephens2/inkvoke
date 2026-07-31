@@ -119,6 +119,10 @@ Wrote lighthouse.png · ~$0.0531 est. · tokens in=18 out=1760 (text_in=18, img_
 
 Use `--no-cost` to suppress usage/cost lines. Rates live in `cmd/gpt-image/cost.go` and may lag OpenAI's pricing page.
 
+## Machine-readable output (agents)
+
+Pass `--json` on any command for exactly one JSON object on stdout (progress heartbeats stay on stderr). Exit codes distinguish usage (1), auth (2), permanent API (3), retryable API (4), and local I/O (5). See `AGENTS.md` or `gpt-image --help-agent` for the full agent contract; `docs/specs/agent-interface.md` is the design record.
+
 ## Long-running requests
 
 High-quality `gpt-image-2` calls often take 30–120+ seconds. The CLI prints stderr heartbeats (`… still waiting on OpenAI (Ns)`) so it does not look hung. Use `--quiet` to silence them, and `--timeout 300` (seconds, default) if a run is cut off early.

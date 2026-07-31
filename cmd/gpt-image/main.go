@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	_ "embed"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -17,7 +18,10 @@ import (
 	"time"
 )
 
-const version = "0.2.1"
+//go:embed agents.md
+var agentsHelp string
+
+const version = "0.3.0"
 
 var (
 	qualities = map[string]bool{"low": true, "medium": true, "high": true, "auto": true}
@@ -34,15 +38,23 @@ func main() {
 func run(args []string) int {
 	if len(args) == 0 {
 		printRootHelp(os.Stderr)
-		return 2
+		return exitUsage
 	}
 	switch args[0] {
 	case "-h", "--help", "help":
 		printRootHelp(os.Stdout)
-		return 0
-	case "-v", "--version", "version":
-		fmt.Printf("gpt-image %s\n", version)
-		return 0
+		return exitOK
+	case "--help-agent", "help-agent":
+		fmt.Print(agentsHelp)
+		if !strings.HasSuffix(agentsHelp, "\n") {
+			fmt.Println()
+		}
+		return exitOK
+	case "-v", "--version":
+		printVersion(false)
+		return exitOK
+	case "version":
+		return cmdVersion(args[1:])
 	case "generate":
 		return cmdGenerate(args[1:])
 	case "edit":
@@ -52,10 +64,36 @@ func run(args []string) int {
 	case "hair-color":
 		return cmdHairColor(args[1:])
 	default:
-		fmt.Fprintf(os.Stderr, "unknown command %q\n\n", args[0])
+		msg := fmt.Sprintf("unknown command %q", args[0])
+		if wantsJSON(args) {
+			return emitFailure("", &usageError{msg: msg}, true)
+		}
+		fmt.Fprintf(os.Stderr, "%s\n\n", msg)
 		printRootHelp(os.Stderr)
-		return 2
+		return exitUsage
 	}
+}
+
+func cmdVersion(args []string) int {
+	fs := flag.NewFlagSet("version", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+	var jsonMode bool
+	fs.BoolVar(&jsonMode, "json", false, "Emit a single JSON object on stdout")
+	fs.Usage = func() {
+		fmt.Fprint(os.Stderr, `Usage: gpt-image version [--json]
+
+Flags:
+`)
+		fs.PrintDefaults()
+	}
+	if err := parseFlags(fs, args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return exitOK
+		}
+		return emitFailure("version", &usageError{msg: err.Error()}, wantsJSON(args))
+	}
+	printVersion(jsonMode)
+	return exitOK
 }
 
 func printRootHelp(w io.Writer) {
@@ -69,17 +107,27 @@ Commands:
   edit        Edit one or more input images with a prompt
   batch       Generate or edit many images from a JSON manifest
   hair-color  Convenience edit for hair color (legacy Arena path)
-  version     Print version
+  version     Print version and default model
 
 Global:
-  -h, --help     Show help
-  -v, --version  Show version
+  -h, --help        Show help
+  -v, --version     Show version
+  --help-agent      Agent-oriented usage (flags, latency, --json)
+
+Exit codes:
+  0  success
+  1  usage error (bad flag, missing prompt, unreadable invocation)
+  2  missing or rejected API key
+  3  API error, non-retryable (content policy, unsupported size)
+  4  API error, retryable (rate limit, 5xx, timeout)
+  5  local I/O error writing or reading a file
 
 Environment:
   OPENAI_API_KEY   API key (or pass --api-key-file)
 
 Examples:
   gpt-image generate "a lighthouse in a storm, gouache" --output lighthouse.png --quality high --size 1536x1024
+  gpt-image generate "…" --output out.jpg --size 1280x648 --output-format jpeg --json
   gpt-image edit photo.jpg --prompt "make the sky golden hour" --output golden.png
   gpt-image batch manifest.json --output-dir outputs --workers 3 --skip-existing
 `)
@@ -93,6 +141,7 @@ type commonFlags struct {
 	apiKeyFile   string
 	noCost       bool
 	quiet        bool
+	jsonMode     bool
 	timeoutSec   int
 }
 
@@ -100,7 +149,7 @@ func addCommonFlags(fs *flag.FlagSet, c *commonFlags) {
 	// Pre-set fields on c become flag defaults (hair-color uses quality medium).
 	modelDef, qualityDef, sizeDef, formatDef := c.model, c.quality, c.size, c.outputFormat
 	if modelDef == "" {
-		modelDef = "gpt-image-2"
+		modelDef = defaultModel
 	}
 	if qualityDef == "" {
 		qualityDef = "auto"
@@ -122,25 +171,26 @@ func addCommonFlags(fs *flag.FlagSet, c *commonFlags) {
 	fs.StringVar(&c.apiKeyFile, "api-key-file", "", "File containing the OpenAI API key (fallback: OPENAI_API_KEY)")
 	fs.BoolVar(&c.noCost, "no-cost", false, "Do not print estimated USD cost / token usage")
 	fs.BoolVar(&c.quiet, "quiet", false, "Suppress progress heartbeats on stderr")
+	fs.BoolVar(&c.jsonMode, "json", false, "Emit exactly one JSON result object on stdout (heartbeats stay on stderr)")
 	fs.IntVar(&c.timeoutSec, "timeout", timeoutDef, "HTTP timeout in seconds per API attempt (high quality often needs 180+)")
 }
 
 func (c *commonFlags) validate() error {
 	if !qualities[c.quality] {
-		return fmt.Errorf("invalid --quality %q (want low|medium|high|auto)", c.quality)
+		return usagef("invalid --quality %q (want low|medium|high|auto)", c.quality)
 	}
 	if !formats[c.outputFormat] {
-		return fmt.Errorf("invalid --output-format %q (want png|jpeg|webp)", c.outputFormat)
+		return usagef("invalid --output-format %q (want png|jpeg|webp)", c.outputFormat)
 	}
 	// Allow documented presets or free-form WIDTHxHEIGHT (gpt-image-2).
 	if !sizes[c.size] {
 		var w, h int
 		if _, err := fmt.Sscanf(c.size, "%dx%d", &w, &h); err != nil || w < 1 || h < 1 {
-			return fmt.Errorf("invalid --size %q", c.size)
+			return usagef("invalid --size %q", c.size)
 		}
 	}
 	if c.timeoutSec < 30 {
-		return fmt.Errorf("invalid --timeout %d (want >= 30 seconds)", c.timeoutSec)
+		return usagef("invalid --timeout %d (want >= 30 seconds)", c.timeoutSec)
 	}
 	return nil
 }
@@ -217,17 +267,17 @@ func resolveAPIKey(path string) (string, error) {
 	if path != "" {
 		b, err := os.ReadFile(expandHome(path))
 		if err != nil {
-			return "", fmt.Errorf("read --api-key-file: %w", err)
+			return "", authf("read --api-key-file: %v", err)
 		}
 		key := strings.TrimSpace(string(b))
 		if key == "" {
-			return "", errors.New("API key file is empty")
+			return "", authf("API key file is empty")
 		}
 		return key, nil
 	}
 	key := strings.TrimSpace(os.Getenv("OPENAI_API_KEY"))
 	if key == "" {
-		return "", errors.New("missing API key: set OPENAI_API_KEY or pass --api-key-file /path/to/key.txt")
+		return "", authf("missing API key: set OPENAI_API_KEY or pass --api-key-file /path/to/key.txt")
 	}
 	return key, nil
 }
@@ -251,7 +301,9 @@ func expandHome(p string) string {
 }
 
 func cmdGenerate(args []string) int {
-	fs := flag.NewFlagSet("generate", flag.ContinueOnError)
+	const command = "generate"
+	jsonGuess := wantsJSON(args)
+	fs := flag.NewFlagSet(command, flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	var common commonFlags
 	var output string
@@ -267,52 +319,56 @@ Flags:
 		fs.PrintDefaults()
 	}
 	if err := parseFlags(fs, args); err != nil {
-		return 2
+		if errors.Is(err, flag.ErrHelp) {
+			return exitOK
+		}
+		return emitFailure(command, &usageError{msg: err.Error()}, jsonGuess || common.jsonMode)
 	}
+	jsonMode := common.jsonMode
 	rest := fs.Args()
 	if len(rest) < 1 {
+		if jsonMode {
+			return emitFailure(command, usagef("missing prompt"), true)
+		}
 		fs.Usage()
-		return 2
+		return exitUsage
 	}
 	prompt := rest[0]
 	if prompt == "-" {
 		b, err := io.ReadAll(os.Stdin)
 		if err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			return 1
+			return emitFailure(command, iof("read stdin: %v", err), jsonMode)
 		}
 		prompt = strings.TrimSpace(string(b))
 	}
 	if strings.TrimSpace(prompt) == "" {
-		fmt.Fprintln(os.Stderr, "prompt is empty")
-		return 1
+		return emitFailure(command, usagef("prompt is empty"), jsonMode)
 	}
 	if err := common.validate(); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 2
+		return emitFailure(command, &usageError{msg: err.Error()}, jsonMode)
 	}
 	client, err := common.newClient()
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
+		return emitFailure(command, err, jsonMode)
 	}
 	started := time.Now()
-	result, err := client.Generate(context.Background(), prompt, common.options())
+	opts := common.options()
+	result, err := client.Generate(context.Background(), prompt, opts)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
+		return emitFailure(command, err, jsonMode)
 	}
 	written, err := WriteImage(result, expandHome(output))
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
+		return emitFailure(command, iof("%v", err), jsonMode)
 	}
-	printWrote(written, result, common.model, time.Since(started), common.noCost)
-	return 0
+	emitWrote(command, written, result, opts, time.Since(started), jsonMode, common.noCost)
+	return exitOK
 }
 
 func cmdEdit(args []string) int {
-	fs := flag.NewFlagSet("edit", flag.ContinueOnError)
+	const command = "edit"
+	jsonGuess := wantsJSON(args)
+	fs := flag.NewFlagSet(command, flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	var common commonFlags
 	var output, prompt string
@@ -327,51 +383,55 @@ Flags:
 		fs.PrintDefaults()
 	}
 	if err := parseFlags(fs, args); err != nil {
-		return 2
+		if errors.Is(err, flag.ErrHelp) {
+			return exitOK
+		}
+		return emitFailure(command, &usageError{msg: err.Error()}, jsonGuess || common.jsonMode)
 	}
+	jsonMode := common.jsonMode
 	images := fs.Args()
 	if len(images) < 1 {
+		if jsonMode {
+			return emitFailure(command, usagef("missing input image"), true)
+		}
 		fs.Usage()
-		return 2
+		return exitUsage
 	}
 	if strings.TrimSpace(prompt) == "" {
-		fmt.Fprintln(os.Stderr, "--prompt is required")
-		return 2
+		return emitFailure(command, usagef("--prompt is required"), jsonMode)
 	}
 	if err := common.validate(); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 2
+		return emitFailure(command, &usageError{msg: err.Error()}, jsonMode)
 	}
 	paths := make([]string, len(images))
 	for i, p := range images {
 		paths[i] = expandHome(p)
 		if st, err := os.Stat(paths[i]); err != nil || st.IsDir() {
-			fmt.Fprintf(os.Stderr, "input image not found: %s\n", paths[i])
-			return 1
+			return emitFailure(command, iof("input image not found: %s", paths[i]), jsonMode)
 		}
 	}
 	client, err := common.newClient()
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
+		return emitFailure(command, err, jsonMode)
 	}
 	started := time.Now()
-	result, err := client.Edit(context.Background(), paths, prompt, common.options())
+	opts := common.options()
+	result, err := client.Edit(context.Background(), paths, prompt, opts)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
+		return emitFailure(command, err, jsonMode)
 	}
 	written, err := WriteImage(result, expandHome(output))
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
+		return emitFailure(command, iof("%v", err), jsonMode)
 	}
-	printWrote(written, result, common.model, time.Since(started), common.noCost)
-	return 0
+	emitWrote(command, written, result, opts, time.Since(started), jsonMode, common.noCost)
+	return exitOK
 }
 
 func cmdHairColor(args []string) int {
-	fs := flag.NewFlagSet("hair-color", flag.ContinueOnError)
+	const command = "hair-color"
+	jsonGuess := wantsJSON(args)
+	fs := flag.NewFlagSet(command, flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	var common commonFlags
 	// Defaults match the old edit_hair_color.py script.
@@ -392,21 +452,26 @@ Flags:
 		fs.PrintDefaults()
 	}
 	if err := parseFlags(fs, args); err != nil {
-		return 2
+		if errors.Is(err, flag.ErrHelp) {
+			return exitOK
+		}
+		return emitFailure(command, &usageError{msg: err.Error()}, jsonGuess || common.jsonMode)
 	}
+	jsonMode := common.jsonMode
 	images := fs.Args()
 	if len(images) != 1 {
+		if jsonMode {
+			return emitFailure(command, usagef("hair-color expects exactly one input image"), true)
+		}
 		fs.Usage()
-		return 2
+		return exitUsage
 	}
 	if err := common.validate(); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 2
+		return emitFailure(command, &usageError{msg: err.Error()}, jsonMode)
 	}
 	imagePath := expandHome(images[0])
 	if st, err := os.Stat(imagePath); err != nil || st.IsDir() {
-		fmt.Fprintf(os.Stderr, "input image not found: %s\n", imagePath)
-		return 1
+		return emitFailure(command, iof("input image not found: %s", imagePath), jsonMode)
 	}
 
 	editPrompt := strings.TrimSpace(prompt)
@@ -428,22 +493,20 @@ Flags:
 
 	client, err := common.newClient()
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
+		return emitFailure(command, err, jsonMode)
 	}
 	started := time.Now()
-	result, err := client.Edit(context.Background(), []string{imagePath}, editPrompt, common.options())
+	opts := common.options()
+	result, err := client.Edit(context.Background(), []string{imagePath}, editPrompt, opts)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
+		return emitFailure(command, err, jsonMode)
 	}
 	written, err := WriteImage(result, expandHome(output))
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
+		return emitFailure(command, iof("%v", err), jsonMode)
 	}
-	printWrote(written, result, common.model, time.Since(started), common.noCost)
-	return 0
+	emitWrote(command, written, result, opts, time.Since(started), jsonMode, common.noCost)
+	return exitOK
 }
 
 type manifestItem struct {
@@ -458,7 +521,7 @@ type manifestItem struct {
 func loadManifest(path string) ([]manifestItem, error) {
 	b, err := os.ReadFile(expandHome(path))
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("read manifest: %w", err)
 	}
 	var raw any
 	if err := json.Unmarshal(b, &raw); err != nil {
@@ -530,7 +593,9 @@ func parseEditFrom(raw json.RawMessage) ([]string, error) {
 }
 
 func cmdBatch(args []string) int {
-	fs := flag.NewFlagSet("batch", flag.ContinueOnError)
+	const command = "batch"
+	jsonGuess := wantsJSON(args)
+	fs := flag.NewFlagSet(command, flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	var common commonFlags
 	var outputDir string
@@ -549,25 +614,33 @@ Flags:
 		fs.PrintDefaults()
 	}
 	if err := parseFlags(fs, args); err != nil {
-		return 2
+		if errors.Is(err, flag.ErrHelp) {
+			return exitOK
+		}
+		return emitFailure(command, &usageError{msg: err.Error()}, jsonGuess || common.jsonMode)
 	}
+	jsonMode := common.jsonMode
 	rest := fs.Args()
 	if len(rest) != 1 {
+		if jsonMode {
+			return emitFailure(command, usagef("batch expects a manifest.json path"), true)
+		}
 		fs.Usage()
-		return 2
+		return exitUsage
 	}
 	if workers < 1 {
-		fmt.Fprintln(os.Stderr, "--workers must be >= 1")
-		return 2
+		return emitFailure(command, usagef("--workers must be >= 1"), jsonMode)
 	}
 	if err := common.validate(); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 2
+		return emitFailure(command, &usageError{msg: err.Error()}, jsonMode)
 	}
 	items, err := loadManifest(rest[0])
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
+		// Manifest parse/read failures are usage or io depending on cause.
+		if errors.Is(err, os.ErrNotExist) {
+			return emitFailure(command, iof("%v", err), jsonMode)
+		}
+		return emitFailure(command, usagef("%v", err), jsonMode)
 	}
 
 	type job struct {
@@ -576,7 +649,10 @@ Flags:
 		options RequestOptions
 		sources []string
 	}
-	var jobs []job
+	var (
+		jobs    []job
+		results []resultEnvelope // preserved order for --json (includes skips)
+	)
 	for _, item := range items {
 		out := item.Output
 		if out == "" {
@@ -585,7 +661,11 @@ Flags:
 		out = expandHome(out)
 		if skipExisting {
 			if st, err := os.Stat(out); err == nil && !st.IsDir() {
-				fmt.Printf("skip %s (exists: %s)\n", item.ID, out)
+				if jsonMode {
+					results = append(results, itemSkipped(item.ID, out))
+				} else {
+					fmt.Printf("skip %s (exists: %s)\n", item.ID, out)
+				}
 				continue
 			}
 		}
@@ -598,13 +678,33 @@ Flags:
 		}
 		sources, err := parseEditFrom(item.EditFrom)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "item %s: %v\n", item.ID, err)
-			return 1
+			return emitFailure(command, usagef("item %s: %v", item.ID, err), jsonMode)
 		}
 		jobs = append(jobs, job{item: item, output: out, options: opts, sources: sources})
 	}
 
 	if dryRun {
+		if jsonMode {
+			plan := make([]resultEnvelope, 0, len(jobs))
+			for _, j := range jobs {
+				mode := "generate"
+				if len(j.sources) > 0 {
+					mode = "edit"
+				}
+				plan = append(plan, resultEnvelope{
+					OK:      true,
+					ID:      j.item.ID,
+					Output:  absPath(j.output),
+					Model:   j.options.Model,
+					Size:    j.options.Size,
+					Quality: j.options.Quality,
+					Mode:    mode,
+					Prompt:  j.item.Prompt,
+				})
+			}
+			writeJSON(resultEnvelope{OK: true, Command: command, DryRun: true, Results: plan})
+			return exitOK
+		}
 		for _, j := range jobs {
 			mode := "generate"
 			if len(j.sources) > 0 {
@@ -613,13 +713,12 @@ Flags:
 			fmt.Printf("%s %s -> %s [%s, %s]\n", mode, j.item.ID, j.output, j.options.Quality, j.options.Size)
 			fmt.Printf("  %s\n", j.item.Prompt)
 		}
-		return 0
+		return exitOK
 	}
 
 	client, err := common.newClient()
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
+		return emitFailure(command, err, jsonMode)
 	}
 	// Batch already prints per-item lines; keep heartbeats off to avoid noise.
 	client.SetQuiet(true)
@@ -630,7 +729,9 @@ Flags:
 		costCount atomic.Int64
 		wg        sync.WaitGroup
 		sem       = make(chan struct{}, workers)
-		mu        sync.Mutex // serialize stdout
+		mu        sync.Mutex // serialize stdout and results append
+		// jobResults keyed by id for stable merge after wait (skips already in results).
+		jobResults = make(map[string]resultEnvelope, len(jobs))
 	)
 
 	for _, j := range jobs {
@@ -652,7 +753,11 @@ Flags:
 			if err != nil {
 				failures.Add(1)
 				mu.Lock()
-				fmt.Fprintf(os.Stderr, "FAILED %s: %v\n", j.item.ID, err)
+				if jsonMode {
+					jobResults[j.item.ID] = itemFailure(j.item.ID, err)
+				} else {
+					fmt.Fprintf(os.Stderr, "FAILED %s: %v\n", j.item.ID, err)
+				}
 				mu.Unlock()
 				return
 			}
@@ -660,11 +765,26 @@ Flags:
 			if err != nil {
 				failures.Add(1)
 				mu.Lock()
-				fmt.Fprintf(os.Stderr, "FAILED %s: %v\n", j.item.ID, err)
+				if jsonMode {
+					jobResults[j.item.ID] = itemFailure(j.item.ID, iof("%v", err))
+				} else {
+					fmt.Fprintf(os.Stderr, "FAILED %s: %v\n", j.item.ID, err)
+				}
 				mu.Unlock()
 				return
 			}
 			elapsed := time.Since(started)
+			if jsonMode {
+				env := itemSuccess(j.item.ID, written, result, j.options, elapsed, common.noCost)
+				if env.CostUSDEstimate != nil {
+					totalCost.Add(uint64(*env.CostUSDEstimate * 1_000_000))
+					costCount.Add(1)
+				}
+				mu.Lock()
+				jobResults[j.item.ID] = env
+				mu.Unlock()
+				return
+			}
 			line := fmt.Sprintf("done %s -> %s", j.item.ID, written)
 			if !common.noCost {
 				usage := SummarizeUsage(result, j.options.Model)
@@ -674,7 +794,6 @@ Flags:
 					line = fmt.Sprintf("%s (%.0fs)", line, elapsed.Seconds())
 				}
 				if usage.CostUSD != nil {
-					// microdollars
 					totalCost.Add(uint64(*usage.CostUSD * 1_000_000))
 					costCount.Add(1)
 				}
@@ -689,6 +808,35 @@ Flags:
 	wg.Wait()
 
 	failN := failures.Load()
+	if jsonMode {
+		// Rebuild full results in manifest order: skips already appended, then jobs.
+		// Skips were recorded first; append job outcomes in jobs order after re-walking items.
+		full := make([]resultEnvelope, 0, len(items))
+		for _, item := range items {
+			if r, ok := jobResults[item.ID]; ok {
+				full = append(full, r)
+				continue
+			}
+			// Must be a skip recorded earlier.
+			for _, r := range results {
+				if r.ID == item.ID {
+					full = append(full, r)
+					break
+				}
+			}
+		}
+		var total *float64
+		if !common.noCost && costCount.Load() > 0 {
+			t := float64(totalCost.Load()) / 1_000_000
+			total = &t
+		}
+		emitBatchJSON(full, total, failN == 0)
+		if failN > 0 {
+			return exitAPIPermanent // partial batch failure: non-zero; agents inspect results[].error
+		}
+		return exitOK
+	}
+
 	okN := int64(len(jobs)) - failN
 	summary := fmt.Sprintf("%d/%d images written to %s", okN, len(jobs), outputDir)
 	if !common.noCost && costCount.Load() > 0 {
@@ -696,9 +844,9 @@ Flags:
 	}
 	fmt.Println(summary)
 	if failN > 0 {
-		return 1
+		return exitAPIPermanent
 	}
-	return 0
+	return exitOK
 }
 
 func printWrote(path string, result *ImageResult, model string, elapsed time.Duration, noCost bool) {
