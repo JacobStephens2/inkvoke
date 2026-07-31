@@ -21,7 +21,7 @@ shell out to ImageMagick, Pillow, or a wrapper script:
 
 | Need | Flag | Note |
 | --- | --- | --- |
-| Exact pixel dimensions | `--size WIDTHxHEIGHT` | `gpt-image-2` accepts arbitrary sizes; other models take the fixed set. Ask for the aspect ratio you want rather than cropping afterwards. |
+| Exact pixel dimensions | `--size WIDTHxHEIGHT` | `gpt-image-2` accepts arbitrary sizes; other models take the fixed set. Ask for the aspect ratio you want rather than cropping afterwards. There is a **minimum pixel budget**: `1024x512` is rejected with `Invalid size '1024x512'. Requested resolution is below the current minimum pixel budget.` after a round trip. `1536x1024` is safe. For a short wide banner, generate at `1536x1024` and crop. |
 | JPEG or WebP instead of PNG | `--output-format jpeg\|webp` | Requested from the API. A PNG you convert locally is a wasted step. |
 | No progress output | `--quiet` | Heartbeats go to stderr; suppressing them is not required to keep stdout clean. |
 | Longer/shorter deadline | `--timeout <seconds>` | Default 300. |

@@ -116,6 +116,28 @@ gpt-image 0.2.1 (default model: gpt-image-2)
 
 and under `--json`, `{"version":"0.2.1","default_model":"gpt-image-2"}`.
 
+### P3b. Validate `--size` locally against the model's constraints
+
+A later run in the same session asked for `--size 1024x512` and got, after a
+full API round trip:
+
+```
+openai images API HTTP 400: Invalid size '1024x512'. Requested resolution is
+below the current minimum pixel budget.
+```
+
+The flag help says `WIDTHxHEIGHT for gpt-image-2` without stating that a
+minimum total pixel budget applies, so the constraint is discoverable only by
+spending a request. Two fixes, either acceptable:
+
+1. Validate known constraints in `validate()` and fail before the HTTP call,
+   the way `--quality` already does.
+2. If the budget is server-side and subject to change, say so in the flag help
+   and name a size that is always safe.
+
+This is an interface gap in the strict sense: a caller cannot learn a hard
+constraint from the interface, only from a failed call.
+
 ### P4. `--help-agent`
 
 Print the `AGENTS.md` content, or a condensed form of it, so an agent that has
