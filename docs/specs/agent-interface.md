@@ -1,6 +1,6 @@
 # Spec: a machine-callable interface for gpt-image
 
-Status: proposal. No behaviour changes in this PR beyond `AGENTS.md`.
+Status: implemented (P1–P4 in v0.3.0). P5 remains lower-confidence and unbuilt.
 
 ## Why
 

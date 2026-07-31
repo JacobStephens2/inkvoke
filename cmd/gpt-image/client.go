@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"mime/multipart"
@@ -23,6 +24,29 @@ const (
 	maxBodyBytes   = 96 << 20 // 96 MiB: high-res b64 PNG payloads can be large
 	progressEvery  = 10 * time.Second
 )
+
+// APIError is a non-2xx Images API response. Classification (auth / permanent /
+// retryable) is done at the CLI exit-code seam so callers do not scrape strings.
+type APIError struct {
+	StatusCode int
+	Message    string
+}
+
+func (e *APIError) Error() string {
+	return fmt.Sprintf("openai images API HTTP %d: %s", e.StatusCode, e.Message)
+}
+
+// Retryable reports whether a later attempt is worth making (timeouts, rate
+// limits, and 5xx). 4xx other than 408/429 are permanent.
+func (e *APIError) Retryable() bool {
+	if e == nil {
+		return false
+	}
+	if e.StatusCode == 408 || e.StatusCode == 429 {
+		return true
+	}
+	return e.StatusCode >= 500 && e.StatusCode <= 599
+}
 
 // Client talks to OpenAI Images API (generate + edit).
 type Client struct {
@@ -148,15 +172,9 @@ func (c *Client) withProgress(ctx context.Context, call func(context.Context) (*
 }
 
 func isPermanentAPIError(err error) bool {
-	if err == nil {
-		return false
-	}
-	s := err.Error()
-	// HTTP 4xx except 408/429 are not worth retrying.
-	for _, code := range []string{"HTTP 400", "HTTP 401", "HTTP 403", "HTTP 404", "HTTP 413", "HTTP 422"} {
-		if strings.Contains(s, code) {
-			return true
-		}
+	var api *APIError
+	if errors.As(err, &api) {
+		return !api.Retryable()
 	}
 	return false
 }
@@ -243,8 +261,7 @@ func parseImageResponse(resp *http.Response) (*ImageResult, error) {
 		return nil, err
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		msg := extractAPIError(body)
-		return nil, fmt.Errorf("openai images API HTTP %d: %s", resp.StatusCode, msg)
+		return nil, &APIError{StatusCode: resp.StatusCode, Message: extractAPIError(body)}
 	}
 	var raw map[string]any
 	if err := json.Unmarshal(body, &raw); err != nil {
