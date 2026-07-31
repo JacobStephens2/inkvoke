@@ -4,6 +4,8 @@ General-purpose command-line tool for OpenAI's image models (`gpt-image-2` by de
 
 Written in Go - single static binary, no Python runtime. Started as a hair-color photo-edit workaround ([Arena's image edit leaderboard](https://arena.ai/leaderboard/image-edit) via the API instead of the browser apps); now a general tool. The original hair-color path is `gpt-image hair-color`.
 
+**If you are an autonomous agent**, read [`AGENTS.md`](AGENTS.md) (or run `gpt-image --help-agent`) instead of this README. Prefer `--json` and the documented exit codes over scraping the human cost line.
+
 ## Install
 
 ### Binary (recommended)
@@ -24,7 +26,7 @@ Assets: `gpt-image-linux-amd64`, `gpt-image-linux-arm64`, `gpt-image-darwin-amd6
 
 ```bash
 go install github.com/JacobStephens2/gpt-image/cmd/gpt-image@latest
-# or pin: ...@v0.2.1
+# or pin: ...@v0.3.0
 ```
 
 (`go install` puts the binary in `$(go env GOPATH)/bin` - put that on your `PATH`.)
@@ -64,6 +66,14 @@ gpt-image generate "a lighthouse in a storm, gouache" \
   --output lighthouse.png --quality high --size 1536x1024
 ```
 
+Generate with machine-readable stdout (agents):
+
+```bash
+gpt-image generate "a lighthouse in a storm, gouache" \
+  --output lighthouse.jpg --size 1280x648 --output-format jpeg \
+  --quality high --json
+```
+
 Edit (one or more input images):
 
 ```bash
@@ -77,7 +87,7 @@ gpt-image batch manifest.json --output-dir outputs \
   --quality high --size 1536x1024 --workers 3 --skip-existing
 ```
 
-`--dry-run` prints the plan without calling the API.
+`--dry-run` prints the plan without calling the API. `gpt-image version` reports the default model; add `--json` for a structured version envelope.
 
 Hair-color convenience (legacy Arena path):
 
