@@ -2,14 +2,31 @@
 
 General-purpose command-line tool for OpenAI's image models (`gpt-image-2` by default): generate images from prompts, edit existing images, and run batches from a JSON manifest.
 
-Started as a hair-color photo-edit workaround ([Arena's image edit leaderboard](https://arena.ai/leaderboard/image-edit) via the API instead of the browser apps, worked through with Codex CLI using GPT-5.5); now a general tool. The original `edit_hair_color.py` still works as before.
+Written in Go - single static binary, no Python runtime. Started as a hair-color photo-edit workaround ([Arena's image edit leaderboard](https://arena.ai/leaderboard/image-edit) via the API instead of the browser apps); now a general tool. The original hair-color path is `gpt-image hair-color`.
 
-## Setup
+## Install
+
+### From source (Go 1.22+)
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
+git clone https://github.com/JacobStephens2/gpt-image.git
+cd gpt-image
+go build -o gpt-image ./cmd/gpt-image
+export OPENAI_API_KEY="<your_openai_api_key>"
+./gpt-image version
+```
+
+Or without cloning:
+
+```bash
+go install github.com/JacobStephens2/gpt-image/cmd/gpt-image@latest
+```
+
+(`go install` puts the binary in `$(go env GOPATH)/bin` - put that on your `PATH`.)
+
+### API key
+
+```bash
 export OPENAI_API_KEY="<your_openai_api_key>"
 ```
 
@@ -20,24 +37,30 @@ Or keep the key in a local file outside the repo and pass `--api-key-file ~/path
 Generate:
 
 ```bash
-python gpt_image.py generate "a lighthouse in a storm, gouache" \
+gpt-image generate "a lighthouse in a storm, gouache" \
   --output lighthouse.png --quality high --size 1536x1024
 ```
 
 Edit (one or more input images):
 
 ```bash
-python gpt_image.py edit photo.jpg --prompt "make the sky golden hour" --output golden.png
+gpt-image edit photo.jpg --prompt "make the sky golden hour" --output golden.png
 ```
 
 Batch from a manifest:
 
 ```bash
-python gpt_image.py batch manifest.json --output-dir outputs \
+gpt-image batch manifest.json --output-dir outputs \
   --quality high --size 1536x1024 --workers 3 --skip-existing
 ```
 
 `--dry-run` prints the plan without calling the API.
+
+Hair-color convenience (legacy Arena path):
+
+```bash
+gpt-image hair-color photo.jpg --output edited.png --color "strawberry blonde"
+```
 
 ## Manifest format
 
@@ -54,17 +77,12 @@ A JSON list (or an object with an `"images"` list). Each item needs a `prompt`; 
 - `id` names the output file (`<output-dir>/<id>.<format>`) when `output` is not set.
 - `edit_from` (path or list of paths) switches that item from generate to edit.
 - Per-item `quality`/`size` override the command-line flags.
-- Failed items retry twice with backoff; the exit code is non-zero if any item still fails.
-
-## Hair-color legacy script
-
-```bash
-python edit_hair_color.py photo.jpg --output edited.png --color "strawberry blonde"
-```
+- Failed items retry twice with backoff; the exit code is non-zero if any still fail.
 
 ## Defaults
 
 - Model `gpt-image-2`, quality `auto`, size `auto`, format `png`.
+- `hair-color` defaults quality to `medium`.
 
 ## Cost in CLI output
 
@@ -76,7 +94,19 @@ Example:
 Wrote lighthouse.png · ~$0.0531 est. · tokens in=18 out=1760 (text_in=18, img_out=1760) · 41s
 ```
 
-Use `--no-cost` to suppress usage/cost lines. Rates live in `PRICING_PER_1M` in `gpt_image.py` and may lag OpenAI's pricing page.
+Use `--no-cost` to suppress usage/cost lines. Rates live in `cmd/gpt-image/cost.go` and may lag OpenAI's pricing page.
+
+## Long-running requests
+
+High-quality `gpt-image-2` calls often take 30–120+ seconds. The CLI prints stderr heartbeats (`… still waiting on OpenAI (Ns)`) so it does not look hung. Use `--quiet` to silence them, and `--timeout 300` (seconds, default) if a run is cut off early.
+
+## Cross-compile
+
+```bash
+GOOS=linux   GOARCH=amd64 go build -o dist/gpt-image-linux-amd64   ./cmd/gpt-image
+GOOS=darwin  GOARCH=arm64 go build -o dist/gpt-image-darwin-arm64  ./cmd/gpt-image
+GOOS=windows GOARCH=amd64 go build -o dist/gpt-image-windows-amd64.exe ./cmd/gpt-image
+```
 
 ## Privacy
 

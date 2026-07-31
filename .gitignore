@@ -19,3 +19,10 @@ outputs/
 openai-key.txt
 *api*key*.txt
 *secret*.txt
+
+# Go
+/gpt-image
+/gpt-image.exe
+/dist/
+*.test
+/vendor/
