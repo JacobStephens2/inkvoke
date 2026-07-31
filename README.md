@@ -6,23 +6,36 @@ Written in Go - single static binary, no Python runtime. Started as a hair-color
 
 ## Install
 
-### From source (Go 1.22+)
+### Binary (recommended)
+
+Download a release from [GitHub Releases](https://github.com/JacobStephens2/gpt-image/releases) (linux/macOS/Windows). Example for Linux amd64:
+
+```bash
+curl -fsSL -o gpt-image \
+  https://github.com/JacobStephens2/gpt-image/releases/latest/download/gpt-image-linux-amd64
+chmod +x gpt-image
+sudo mv gpt-image /usr/local/bin/gpt-image
+gpt-image version
+```
+
+Assets: `gpt-image-linux-amd64`, `gpt-image-linux-arm64`, `gpt-image-darwin-amd64`, `gpt-image-darwin-arm64`, `gpt-image-windows-amd64.exe`, plus `SHA256SUMS`.
+
+### With Go 1.22+
+
+```bash
+go install github.com/JacobStephens2/gpt-image/cmd/gpt-image@latest
+# or pin: ...@v0.2.1
+```
+
+(`go install` puts the binary in `$(go env GOPATH)/bin` - put that on your `PATH`.)
+
+From a clone:
 
 ```bash
 git clone https://github.com/JacobStephens2/gpt-image.git
 cd gpt-image
 go build -o gpt-image ./cmd/gpt-image
-export OPENAI_API_KEY="<your_openai_api_key>"
-./gpt-image version
 ```
-
-Or without cloning:
-
-```bash
-go install github.com/JacobStephens2/gpt-image/cmd/gpt-image@latest
-```
-
-(`go install` puts the binary in `$(go env GOPATH)/bin` - put that on your `PATH`.)
 
 ### API key
 
