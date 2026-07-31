@@ -17,7 +17,7 @@ import (
 	"time"
 )
 
-const version = "0.2.0"
+const version = "0.2.1"
 
 var (
 	qualities = map[string]bool{"low": true, "medium": true, "high": true, "auto": true}
@@ -92,6 +92,8 @@ type commonFlags struct {
 	outputFormat string
 	apiKeyFile   string
 	noCost       bool
+	quiet        bool
+	timeoutSec   int
 }
 
 func addCommonFlags(fs *flag.FlagSet, c *commonFlags) {
@@ -109,12 +111,18 @@ func addCommonFlags(fs *flag.FlagSet, c *commonFlags) {
 	if formatDef == "" {
 		formatDef = "png"
 	}
+	timeoutDef := c.timeoutSec
+	if timeoutDef <= 0 {
+		timeoutDef = int(defaultTimeout / time.Second)
+	}
 	fs.StringVar(&c.model, "model", modelDef, "OpenAI image model")
 	fs.StringVar(&c.quality, "quality", qualityDef, "Quality: low, medium, high, auto")
 	fs.StringVar(&c.size, "size", sizeDef, "Size: auto, 1024x1024, 1536x1024, 1024x1536, or WIDTHxHEIGHT for gpt-image-2")
 	fs.StringVar(&c.outputFormat, "output-format", formatDef, "Output format: png, jpeg, webp")
 	fs.StringVar(&c.apiKeyFile, "api-key-file", "", "File containing the OpenAI API key (fallback: OPENAI_API_KEY)")
 	fs.BoolVar(&c.noCost, "no-cost", false, "Do not print estimated USD cost / token usage")
+	fs.BoolVar(&c.quiet, "quiet", false, "Suppress progress heartbeats on stderr")
+	fs.IntVar(&c.timeoutSec, "timeout", timeoutDef, "HTTP timeout in seconds per API attempt (high quality often needs 180+)")
 }
 
 func (c *commonFlags) validate() error {
@@ -131,7 +139,20 @@ func (c *commonFlags) validate() error {
 			return fmt.Errorf("invalid --size %q", c.size)
 		}
 	}
+	if c.timeoutSec < 30 {
+		return fmt.Errorf("invalid --timeout %d (want >= 30 seconds)", c.timeoutSec)
+	}
 	return nil
+}
+
+func (c *commonFlags) newClient() (*Client, error) {
+	key, err := resolveAPIKey(c.apiKeyFile)
+	if err != nil {
+		return nil, err
+	}
+	client := NewClient(key, time.Duration(c.timeoutSec)*time.Second)
+	client.SetQuiet(c.quiet)
+	return client, nil
 }
 
 func (c *commonFlags) options() RequestOptions {
@@ -270,12 +291,11 @@ Flags:
 		fmt.Fprintln(os.Stderr, err)
 		return 2
 	}
-	key, err := resolveAPIKey(common.apiKeyFile)
+	client, err := common.newClient()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
-	client := NewClient(key)
 	started := time.Now()
 	result, err := client.Generate(context.Background(), prompt, common.options())
 	if err != nil {
@@ -330,12 +350,11 @@ Flags:
 			return 1
 		}
 	}
-	key, err := resolveAPIKey(common.apiKeyFile)
+	client, err := common.newClient()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
-	client := NewClient(key)
 	started := time.Now()
 	result, err := client.Edit(context.Background(), paths, prompt, common.options())
 	if err != nil {
@@ -407,12 +426,11 @@ Flags:
 		editPrompt = editPrompt + " " + strings.TrimSpace(extra)
 	}
 
-	key, err := resolveAPIKey(common.apiKeyFile)
+	client, err := common.newClient()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
-	client := NewClient(key)
 	started := time.Now()
 	result, err := client.Edit(context.Background(), []string{imagePath}, editPrompt, common.options())
 	if err != nil {
@@ -598,12 +616,13 @@ Flags:
 		return 0
 	}
 
-	key, err := resolveAPIKey(common.apiKeyFile)
+	client, err := common.newClient()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
-	client := NewClient(key)
+	// Batch already prints per-item lines; keep heartbeats off to avoid noise.
+	client.SetQuiet(true)
 
 	var (
 		failures  atomic.Int64

@@ -96,6 +96,10 @@ Wrote lighthouse.png · ~$0.0531 est. · tokens in=18 out=1760 (text_in=18, img_
 
 Use `--no-cost` to suppress usage/cost lines. Rates live in `cmd/gpt-image/cost.go` and may lag OpenAI's pricing page.
 
+## Long-running requests
+
+High-quality `gpt-image-2` calls often take 30–120+ seconds. The CLI prints stderr heartbeats (`… still waiting on OpenAI (Ns)`) so it does not look hung. Use `--quiet` to silence them, and `--timeout 300` (seconds, default) if a run is cut off early.
+
 ## Cross-compile
 
 ```bash
