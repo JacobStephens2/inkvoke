@@ -1,23 +1,23 @@
-# gpt-image for agents
+# inkvoke for agents
 
 You are an autonomous agent and you want an image. Read this file, not the README.
-Also available from the binary as `gpt-image --help-agent`.
+Also available from the binary as `inkvoke --help-agent`.
 
 ```bash
-curl -fsSL -o /usr/local/bin/gpt-image \
-  https://github.com/JacobStephens2/gpt-image/releases/latest/download/gpt-image-linux-amd64
-chmod +x /usr/local/bin/gpt-image
+curl -fsSL -o /usr/local/bin/inkvoke \
+  https://github.com/JacobStephens2/inkvoke/releases/latest/download/inkvoke-linux-amd64
+chmod +x /usr/local/bin/inkvoke
 export OPENAI_API_KEY="..."          # or pass --api-key-file /path/to/key
 # Humans may omit both and be prompted once (TTY only). Agents: always set env or file.
-# Humans may also run bare `gpt-image` for a progressive wizard (TTY only). Agents: always pass full args.
+# Humans may also run bare `inkvoke` for a progressive wizard (TTY only). Agents: always pass full args.
 
-gpt-image generate "<prompt>" --output out.jpg \
+inkvoke generate "<prompt>" --output out.jpg \
   --size 1280x648 --output-format jpeg --quality high --json
 ```
 
 ## The whole flag surface
 
-Run `gpt-image <command> --help`. The README's usage section is illustrative, not
+Run `inkvoke <command> --help`. The README's usage section is illustrative, not
 exhaustive, so reading only the README will cause you to re-implement things the
 binary already does. Specifically, these already exist and you do not need to
 shell out to ImageMagick, Pillow, or a wrapper script:

@@ -236,7 +236,7 @@ func printVersion(jsonMode bool) {
 		})
 		return
 	}
-	fmt.Printf("gpt-image %s (default model: %s)\n", version, defaultModel)
+	fmt.Printf("inkvoke %s (default model: %s)\n", version, defaultModel)
 }
 
 // wantsJSON reports whether args contain an orthogonal --json flag (before --).

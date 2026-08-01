@@ -245,9 +245,9 @@ func looksLikePastedPrompt(s string) bool {
 	return false
 }
 
-// runInteractiveRoot is the wizard for bare `gpt-image` with no args.
+// runInteractiveRoot is the wizard for bare `inkvoke` with no args.
 func runInteractiveRoot() int {
-	fmt.Fprintln(os.Stderr, "gpt-image interactive mode (Enter accepts defaults where shown)")
+	fmt.Fprintln(os.Stderr, "inkvoke interactive mode (Enter accepts defaults where shown)")
 	fmt.Fprintln(os.Stderr, "Tip: press Enter for generate, then type or paste your image prompt (multi-line paste is captured automatically)")
 	cmd, err := promptChoiceOpts("Command", []string{"generate", "edit", "batch", "hair-color"}, "generate", true)
 	if err != nil {
@@ -309,7 +309,7 @@ func interactiveGenerateStartingWith(firstLine string) int {
 }
 
 // fillGenerateInteractively prompts for a missing generate prompt (and optional
-// overrides) when the user ran `gpt-image generate` without a prompt on a TTY.
+// overrides) when the user ran `inkvoke generate` without a prompt on a TTY.
 func fillGenerateInteractively(output *string, common *commonFlags) (prompt string, err error) {
 	fmt.Fprintln(os.Stderr, "Missing required args — answer each prompt (Enter accepts defaults).")
 	prompt, err = promptMultiline("Image prompt")

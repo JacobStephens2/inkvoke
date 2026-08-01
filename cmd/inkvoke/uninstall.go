@@ -10,7 +10,7 @@ import (
 	"strings"
 )
 
-// resolveSelfBinary returns the absolute path of the running gpt-image binary.
+// resolveSelfBinary returns the absolute path of the running inkvoke binary.
 // Symlinks are resolved so uninstall removes the real file when installed via link.
 func resolveSelfBinary() (string, error) {
 	exe, err := os.Executable()
@@ -34,7 +34,7 @@ func looksLikeEphemeralGoBuild(path string) bool {
 		return true
 	}
 	base := filepath.Base(path)
-	// go test names like "gpt-image.test"
+	// go test names like "inkvoke.test"
 	if strings.HasSuffix(base, ".test") || strings.HasSuffix(base, ".test.exe") {
 		return true
 	}
@@ -72,12 +72,12 @@ func cmdUninstall(args []string) int {
 		case "--json", "-json":
 			// allowed
 		case "-h", "--help", "help":
-			fmt.Fprint(os.Stdout, `Usage: gpt-image --uninstall [--json]
-       gpt-image uninstall [--json]
+			fmt.Fprint(os.Stdout, `Usage: inkvoke --uninstall [--json]
+       inkvoke uninstall [--json]
 
-Remove the gpt-image binary that is currently running (the install on your PATH).
+Remove the inkvoke binary that is currently running (the install on your PATH).
 Does not touch API keys, images, or shell config. May need sudo if the file is
-root-owned (e.g. /usr/local/bin/gpt-image).
+root-owned (e.g. /usr/local/bin/inkvoke).
 
 `)
 			return exitOK
@@ -100,7 +100,7 @@ root-owned (e.g. /usr/local/bin/gpt-image).
 			hint = fmt.Sprintf(" (try: sudo %s --uninstall)", filepath.Base(path))
 		}
 		if runtime.GOOS == "windows" {
-			hint = " (on Windows, close other shells using gpt-image and delete the .exe manually if remove fails)"
+			hint = " (on Windows, close other shells using inkvoke and delete the .exe manually if remove fails)"
 		}
 		return emitFailure(command, iof("remove %s: %v%s", path, err, hint), jsonMode)
 	}
@@ -114,6 +114,6 @@ root-owned (e.g. /usr/local/bin/gpt-image).
 		return exitOK
 	}
 	fmt.Printf("Removed %s\n", path)
-	fmt.Fprintln(os.Stderr, "gpt-image is uninstalled from this location. Shell may still hash the old path until you open a new terminal or run: hash -r")
+	fmt.Fprintln(os.Stderr, "inkvoke is uninstalled from this location. Shell may still hash the old path until you open a new terminal or run: hash -r")
 	return exitOK
 }

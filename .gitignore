@@ -21,6 +21,8 @@ openai-key.txt
 *secret*.txt
 
 # Go
+/inkvoke
+/inkvoke.exe
 /gpt-image
 /gpt-image.exe
 /dist/

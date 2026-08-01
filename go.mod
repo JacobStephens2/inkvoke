@@ -1,4 +1,4 @@
-module github.com/JacobStephens2/gpt-image
+module github.com/JacobStephens2/inkvoke
 
 go 1.25.0
 

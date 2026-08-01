@@ -1,10 +1,10 @@
-# Spec: a machine-callable interface for gpt-image
+# Spec: a machine-callable interface for inkvoke
 
 Status: implemented (P1–P4 in v0.3.0). P5 remains lower-confidence and unbuilt.
 
 ## Why
 
-An autonomous agent used `gpt-image` on a locked-down VM (no Go toolchain, no
+An autonomous agent used `inkvoke` on a locked-down VM (no Go toolchain, no
 Python image libraries installed by policy) to produce a banner image for an
 internal company release note. The tool worked and the image shipped. This spec
 records where the interface cost the caller extra steps, and proposes the
@@ -38,7 +38,7 @@ dimensions and local format control were unavailable, generated at
 `1536x1024` PNG, and then cropped and re-encoded with Pillow to reach a
 1280x648 JPEG under 100KB. Every one of those steps was avoidable:
 `--size 1280x648` and `--output-format jpeg` already exist and are visible in
-`gpt-image generate --help`. The README's usage section shows a few
+`inkvoke generate --help`. The README's usage section shows a few
 representative flags, so a caller who treats it as the interface will
 re-implement behaviour the binary already has, and will pull in exactly the
 runtime dependency the single-binary design exists to avoid.
@@ -107,11 +107,11 @@ specify and the most expensive to leave unstated.
 
 ### P3. `version` reports the default model
 
-`gpt-image version` prints `gpt-image 0.2.1`. It should also report the default
+`inkvoke version` prints `inkvoke 0.2.1`. It should also report the default
 model, since that is what the next call will spend money on:
 
 ```
-gpt-image 0.2.1 (default model: gpt-image-2)
+inkvoke 0.2.1 (default model: gpt-image-2)
 ```
 
 and under `--json`, `{"version":"0.2.1","default_model":"gpt-image-2"}`.
@@ -141,7 +141,7 @@ P1 through P4 first and see whether P5 still has a claim.
 
 ## Alternatives considered
 
-**A separate `gpt-image api <command>` subtree that always emits JSON.**
+**A separate `inkvoke api <command>` subtree that always emits JSON.**
 Rejected. It duplicates the entire flag surface and creates a second seam to
 keep in step with the first. Two adapters over one interface is the goal; two
 interfaces is not.

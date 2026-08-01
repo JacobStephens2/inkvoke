@@ -16,17 +16,17 @@ func TestLooksLikeEphemeralGoBuild(t *testing.T) {
 			t.Fatalf("expected go-build path to be ephemeral: %s", p)
 		}
 	}
-	if !looksLikeEphemeralGoBuild("gpt-image.test") {
+	if !looksLikeEphemeralGoBuild("inkvoke.test") {
 		t.Fatal("expected .test binary to be ephemeral")
 	}
-	if looksLikeEphemeralGoBuild("/usr/local/bin/gpt-image") {
+	if looksLikeEphemeralGoBuild("/usr/local/bin/inkvoke") {
 		t.Fatal("release path should not be ephemeral")
 	}
 }
 
 func TestRemoveSelfBinary(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "gpt-image")
+	path := filepath.Join(dir, "inkvoke")
 	if runtime.GOOS == "windows" {
 		path += ".exe"
 	}
@@ -42,7 +42,7 @@ func TestRemoveSelfBinary(t *testing.T) {
 }
 
 func TestRemoveSelfBinaryRefusesEphemeral(t *testing.T) {
-	err := removeSelfBinary(filepath.Join("/tmp", "go-build", "x", "gpt-image"))
+	err := removeSelfBinary(filepath.Join("/tmp", "go-build", "x", "inkvoke"))
 	if err == nil || !strings.Contains(err.Error(), "ephemeral") {
 		t.Fatalf("got %v", err)
 	}

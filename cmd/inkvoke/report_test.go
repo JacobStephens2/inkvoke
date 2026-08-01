@@ -125,7 +125,7 @@ func TestWantsJSON(t *testing.T) {
 }
 
 func TestAgentsHelpEmbedded(t *testing.T) {
-	if !strings.Contains(agentsHelp, "--json") && !strings.Contains(agentsHelp, "gpt-image") {
+	if !strings.Contains(agentsHelp, "--json") && !strings.Contains(agentsHelp, "inkvoke") {
 		t.Fatal("embedded agents help looks empty")
 	}
 	// Keep embed in sync with root AGENTS.md when both are present.
@@ -135,7 +135,7 @@ func TestAgentsHelpEmbedded(t *testing.T) {
 		t.Skip("root AGENTS.md not present")
 	}
 	if string(b) != agentsHelp {
-		t.Fatal("cmd/gpt-image/agents.md is out of sync with AGENTS.md; copy root over embed")
+		t.Fatal("cmd/inkvoke/agents.md is out of sync with AGENTS.md; copy root over embed")
 	}
 }
 
@@ -160,7 +160,7 @@ func TestRunHelpAgent(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("exit %d", code)
 	}
-	if !strings.Contains(out, "gpt-image") {
+	if !strings.Contains(out, "inkvoke") {
 		t.Fatalf("help-agent output: %q", out[:min(80, len(out))])
 	}
 }

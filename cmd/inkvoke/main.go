@@ -1,4 +1,4 @@
-// Command gpt-image is a CLI for OpenAI's image models (gpt-image-2 by default):
+// Command inkvoke is a CLI for OpenAI's image models (gpt-image-2 by default):
 // generate from a prompt, edit existing photos, or run a JSON batch.
 package main
 
@@ -23,7 +23,7 @@ import (
 //go:embed agents.md
 var agentsHelp string
 
-const version = "0.3.3"
+const version = "1.0.0"
 
 var (
 	qualities = map[string]bool{"low": true, "medium": true, "high": true, "auto": true}
@@ -34,6 +34,11 @@ var (
 )
 
 func main() {
+	// Transition alias: release ships dual-named assets; old argv0 prints stderr-only.
+	// Never print this on stdout (breaks --json agents). See docs/decisions/inkvoke-naming-decision.md.
+	if base := strings.TrimSuffix(filepath.Base(os.Args[0]), ".exe"); base == "gpt-image" {
+		fmt.Fprintln(os.Stderr, "note: this tool is now inkvoke; gpt-image is a temporary transition alias")
+	}
 	os.Exit(run(os.Args[1:]))
 }
 
@@ -88,7 +93,7 @@ func cmdVersion(args []string) int {
 	var jsonMode bool
 	fs.BoolVar(&jsonMode, "json", false, "Emit a single JSON object on stdout")
 	fs.Usage = func() {
-		fmt.Fprint(os.Stderr, `Usage: gpt-image version [--json]
+		fmt.Fprint(os.Stderr, `Usage: inkvoke version [--json]
 
 Flags:
 `)
@@ -105,11 +110,11 @@ Flags:
 }
 
 func printRootHelp(w io.Writer) {
-	fmt.Fprint(w, `gpt-image - generate and edit images with OpenAI image models
+	fmt.Fprint(w, `inkvoke - generate and edit images with OpenAI image models
 
 Usage:
-  gpt-image <command> [flags]
-  gpt-image                 Interactive mode (TTY): ask for missing info step by step
+  inkvoke <command> [flags]
+  inkvoke                 Interactive mode (TTY): ask for missing info step by step
 
 Commands:
   generate    Generate an image from a prompt
@@ -117,9 +122,9 @@ Commands:
   batch       Generate or edit many images from a JSON manifest
   hair-color  Convenience edit for hair color (legacy Arena path)
   version     Print version and default model
-  uninstall   Remove this gpt-image binary from disk
+  uninstall   Remove this inkvoke binary from disk
 
-  With no command (or a command missing required args) on a terminal, gpt-image
+  With no command (or a command missing required args) on a terminal, inkvoke
   prompts one question at a time. Non-interactive runs still require full flags.
 
 Global:
@@ -140,10 +145,10 @@ Environment:
   OPENAI_API_KEY   API key (or pass --api-key-file, or interactive prompt)
 
 Examples:
-  gpt-image generate "a lighthouse in a storm, gouache" --output lighthouse.png --quality high --size 1536x1024
-  gpt-image generate "…" --output out.jpg --size 1280x648 --output-format jpeg --json
-  gpt-image edit photo.jpg --prompt "make the sky golden hour" --output golden.png
-  gpt-image batch manifest.json --output-dir outputs --workers 3 --skip-existing
+  inkvoke generate "a lighthouse in a storm, gouache" --output lighthouse.png --quality high --size 1536x1024
+  inkvoke generate "…" --output out.jpg --size 1280x648 --output-format jpeg --json
+  inkvoke edit photo.jpg --prompt "make the sky golden hour" --output golden.png
+  inkvoke batch manifest.json --output-dir outputs --workers 3 --skip-existing
 `)
 }
 
@@ -355,7 +360,7 @@ func cmdGenerate(args []string) int {
 	addCommonFlags(fs, &common)
 	fs.StringVar(&output, "output", "generated.png", "Output image path")
 	fs.Usage = func() {
-		fmt.Fprint(os.Stderr, `Usage: gpt-image generate <prompt|-> [flags]
+		fmt.Fprint(os.Stderr, `Usage: inkvoke generate <prompt|-> [flags]
 
   Prompt may be "-" to read from stdin.
 
@@ -432,7 +437,7 @@ func cmdEdit(args []string) int {
 	fs.StringVar(&output, "output", "edited.png", "Output image path")
 	fs.StringVar(&prompt, "prompt", "", "Edit instruction (required)")
 	fs.Usage = func() {
-		fmt.Fprint(os.Stderr, `Usage: gpt-image edit <image> [image...] --prompt "..." [flags]
+		fmt.Fprint(os.Stderr, `Usage: inkvoke edit <image> [image...] --prompt "..." [flags]
 
 Flags:
 `)
@@ -510,7 +515,7 @@ func cmdHairColor(args []string) int {
 	fs.StringVar(&color, "color", "strawberry blonde", "Target hair color when --prompt is not set")
 	fs.StringVar(&extra, "extra-instruction", "", "Optional text appended to the edit prompt")
 	fs.Usage = func() {
-		fmt.Fprint(os.Stderr, `Usage: gpt-image hair-color <image> [flags]
+		fmt.Fprint(os.Stderr, `Usage: inkvoke hair-color <image> [flags]
 
 Convenience wrapper around edit for the original Arena hair-color path.
 
@@ -699,7 +704,7 @@ func cmdBatch(args []string) int {
 	fs.BoolVar(&skipExisting, "skip-existing", false, "Skip outputs that already exist")
 	fs.BoolVar(&dryRun, "dry-run", false, "Print the plan without calling the API")
 	fs.Usage = func() {
-		fmt.Fprint(os.Stderr, `Usage: gpt-image batch <manifest.json> [flags]
+		fmt.Fprint(os.Stderr, `Usage: inkvoke batch <manifest.json> [flags]
 
 Flags:
 `)

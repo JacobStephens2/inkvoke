@@ -1,16 +1,20 @@
-# gpt-image
+# inkvoke
+
+**inkvoke** — single-binary, agent-friendly image generation and editing CLI. Powered by OpenAI **gpt-image-2**.
 
 General-purpose command-line tool for OpenAI's image models (`gpt-image-2` by default): generate images from prompts, edit existing images, and run batches from a JSON manifest.
 
-Written in Go - single static binary, no Python runtime. Started as a hair-color photo-edit workaround ([Arena's image edit leaderboard](https://arena.ai/leaderboard/image-edit) via the API instead of the browser apps); now a general tool. The original hair-color path is `gpt-image hair-color`.
+Written in Go - single static binary, no Python runtime. Started as a hair-color photo-edit workaround ([Arena's image edit leaderboard](https://arena.ai/leaderboard/image-edit) via the API instead of the browser apps); now a general tool. The original hair-color path is `inkvoke hair-color`.
 
-**If you are an autonomous agent**, read [`AGENTS.md`](AGENTS.md) (or run `gpt-image --help-agent`) instead of this README. Prefer `--json` and the documented exit codes over scraping the human cost line.
+> Formerly **`gpt-image`**. Renamed in v1.0.0 — see [`docs/decisions/inkvoke-naming-decision.md`](docs/decisions/inkvoke-naming-decision.md). Transition releases still publish `gpt-image-*` assets (same binary; stderr deprecation notice when invoked as `gpt-image`).
+
+**If you are an autonomous agent**, read [`AGENTS.md`](AGENTS.md) (or run `inkvoke --help-agent`) instead of this README. Prefer `--json` and the documented exit codes over scraping the human cost line.
 
 ## Install
 
 ### Binary (recommended)
 
-Download a release from [GitHub Releases](https://github.com/JacobStephens2/gpt-image/releases). Pick the asset that matches **both** your OS and CPU architecture. Using the wrong file (for example a Linux binary on macOS, or `amd64` on Apple Silicon without Rosetta) fails with errors like `exec format error` or "cannot be opened because the developer cannot be verified" / wrong architecture.
+Download a release from [GitHub Releases](https://github.com/JacobStephens2/inkvoke/releases). Pick the asset that matches **both** your OS and CPU architecture. Using the wrong file (for example a Linux binary on macOS, or `amd64` on Apple Silicon without Rosetta) fails with errors like `exec format error` or "cannot be opened because the developer cannot be verified" / wrong architecture.
 
 #### Which binary? (`amd64` vs `arm64`)
 
@@ -19,11 +23,13 @@ Download a release from [GitHub Releases](https://github.com/JacobStephens2/gpt-
 | **`amd64`** | Intel/AMD 64-bit (x86_64) | Most Windows/Linux PCs; older Intel Macs |
 | **`arm64`** | ARM 64-bit (aarch64) | Apple Silicon Macs (M1/M2/M3/M4…); many Raspberry Pi / AWS Graviton hosts |
 
-- **macOS Apple Silicon** → `gpt-image-darwin-arm64` (not `linux-*`, not `darwin-amd64` unless you run under Rosetta)
-- **macOS Intel** → `gpt-image-darwin-amd64`
-- **Linux x86_64** → `gpt-image-linux-amd64`
-- **Linux ARM64** → `gpt-image-linux-arm64`
-- **Windows x86_64** → `gpt-image-windows-amd64.exe`
+- **macOS Apple Silicon** → `inkvoke-darwin-arm64` (not `linux-*`, not `darwin-amd64` unless you run under Rosetta)
+- **macOS Intel** → `inkvoke-darwin-amd64`
+- **Linux x86_64** → `inkvoke-linux-amd64`
+- **Linux ARM64** → `inkvoke-linux-arm64`
+- **Windows x86_64** → `inkvoke-windows-amd64.exe`
+
+Transition releases also publish the same bytes as `gpt-image-<os>-<arch>` for one version window.
 
 Check your machine if unsure:
 
@@ -37,70 +43,70 @@ Assets also include `SHA256SUMS` for integrity checks.
 #### macOS (Apple Silicon — arm64)
 
 ```bash
-curl -fsSL -o gpt-image \
-  https://github.com/JacobStephens2/gpt-image/releases/latest/download/gpt-image-darwin-arm64
-chmod +x gpt-image
-sudo mv gpt-image /usr/local/bin/gpt-image
-gpt-image version
+curl -fsSL -o inkvoke \
+  https://github.com/JacobStephens2/inkvoke/releases/latest/download/inkvoke-darwin-arm64
+chmod +x inkvoke
+sudo mv inkvoke /usr/local/bin/inkvoke
+inkvoke version
 ```
 
 #### macOS (Intel — amd64)
 
 ```bash
-curl -fsSL -o gpt-image \
-  https://github.com/JacobStephens2/gpt-image/releases/latest/download/gpt-image-darwin-amd64
-chmod +x gpt-image
-sudo mv gpt-image /usr/local/bin/gpt-image
-gpt-image version
+curl -fsSL -o inkvoke \
+  https://github.com/JacobStephens2/inkvoke/releases/latest/download/inkvoke-darwin-amd64
+chmod +x inkvoke
+sudo mv inkvoke /usr/local/bin/inkvoke
+inkvoke version
 ```
 
 #### Linux (amd64)
 
 ```bash
-curl -fsSL -o gpt-image \
-  https://github.com/JacobStephens2/gpt-image/releases/latest/download/gpt-image-linux-amd64
-chmod +x gpt-image
-sudo mv gpt-image /usr/local/bin/gpt-image
-gpt-image version
+curl -fsSL -o inkvoke \
+  https://github.com/JacobStephens2/inkvoke/releases/latest/download/inkvoke-linux-amd64
+chmod +x inkvoke
+sudo mv inkvoke /usr/local/bin/inkvoke
+inkvoke version
 ```
 
 #### Linux (arm64)
 
 ```bash
-curl -fsSL -o gpt-image \
-  https://github.com/JacobStephens2/gpt-image/releases/latest/download/gpt-image-linux-arm64
-chmod +x gpt-image
-sudo mv gpt-image /usr/local/bin/gpt-image
-gpt-image version
+curl -fsSL -o inkvoke \
+  https://github.com/JacobStephens2/inkvoke/releases/latest/download/inkvoke-linux-arm64
+chmod +x inkvoke
+sudo mv inkvoke /usr/local/bin/inkvoke
+inkvoke version
 ```
 
 #### Windows (amd64)
 
-Download [`gpt-image-windows-amd64.exe`](https://github.com/JacobStephens2/gpt-image/releases/latest/download/gpt-image-windows-amd64.exe) from Releases, rename to `gpt-image.exe` if you like, put it on your `PATH`, then run `gpt-image version`.
+Download [`inkvoke-windows-amd64.exe`](https://github.com/JacobStephens2/inkvoke/releases/latest/download/inkvoke-windows-amd64.exe) from Releases, rename to `inkvoke.exe` if you like, put it on your `PATH`, then run `inkvoke version`.
 
 #### Uninstall
 
-Remove the binary that `gpt-image` is running from:
+Remove the binary that `inkvoke` is running from:
 
 ```bash
-gpt-image --uninstall
-# or: gpt-image uninstall
+inkvoke --uninstall
+# or: inkvoke uninstall
 ```
 
 If the file is root-owned (common for `/usr/local/bin`):
 
 ```bash
-sudo gpt-image --uninstall
+sudo inkvoke --uninstall
 ```
 
 That only deletes the installed binary — not API keys, generated images, or shell config. After uninstall, run `hash -r` (zsh/bash) or open a new terminal so the shell drops a cached path.
 
-Manual alternative: `sudo rm /usr/local/bin/gpt-image`, or delete `$(go env GOPATH)/bin/gpt-image` if you used `go install`.
+Manual alternative: `sudo rm /usr/local/bin/inkvoke`, or delete `$(go env GOPATH)/bin/inkvoke` if you used `go install`.
 
 ### With Go 1.22+
 
 ```bash
-go install github.com/JacobStephens2/gpt-image/cmd/gpt-image@latest
+go install github.com/JacobStephens2/inkvoke/cmd/inkvoke@latest
 # or pin: ...@v0.3.0
 ```
 
@@ -109,9 +115,9 @@ go install github.com/JacobStephens2/gpt-image/cmd/gpt-image@latest
 From a clone:
 
 ```bash
-git clone https://github.com/JacobStephens2/gpt-image.git
-cd gpt-image
-go build -o gpt-image ./cmd/gpt-image
+git clone https://github.com/JacobStephens2/inkvoke.git
+cd inkvoke
+go build -o inkvoke ./cmd/inkvoke
 ```
 
 ### API key (required)
@@ -131,7 +137,7 @@ export OPENAI_API_KEY="<your_openai_api_key>"
 Or keep the key in a local file outside the repo (preferred if you do not want it in shell history) and pass the file to any command:
 
 ```bash
-gpt-image generate "a lighthouse in a storm, gouache" \
+inkvoke generate "a lighthouse in a storm, gouache" \
   --api-key-file ~/path/to/key.txt \
   --output lighthouse.png
 ```
@@ -144,12 +150,12 @@ Do not commit API keys. The repo `.gitignore` already excludes common local key 
 
 ### Interactive mode (terminal)
 
-If you run `gpt-image` with no arguments on a terminal, or run a command without its required args (for example `gpt-image generate` with no prompt), the CLI asks **one question at a time** until it has enough to run. Press Enter to accept a shown default. Agents and non-TTY environments are never prompted this way — they still need full flags (and get usage/auth exit codes).
+If you run `inkvoke` with no arguments on a terminal, or run a command without its required args (for example `inkvoke generate` with no prompt), the CLI asks **one question at a time** until it has enough to run. Press Enter to accept a shown default. Agents and non-TTY environments are never prompted this way — they still need full flags (and get usage/auth exit codes).
 
 **Image / edit prompts capture whatever you type or paste** (including multi-paragraph text and blank lines) and send that exact string to the API. A multi-line paste is auto-drained; a single line finishes after Enter. Optional: end with a line containing only `---` or Ctrl-D.
 
 ```bash
-gpt-image
+inkvoke
 # Command (generate/edit/batch/hair-color) [generate]:   # press Enter
 # Image prompt
 #   (type one line + Enter, or paste any multi-line text — it is sent as-is to the API)
@@ -161,14 +167,14 @@ gpt-image
 ### Generate
 
 ```bash
-gpt-image generate "a lighthouse in a storm, gouache" \
+inkvoke generate "a lighthouse in a storm, gouache" \
   --output lighthouse.png --quality high --size 1536x1024
 ```
 
 Generate with machine-readable stdout (agents):
 
 ```bash
-gpt-image generate "a lighthouse in a storm, gouache" \
+inkvoke generate "a lighthouse in a storm, gouache" \
   --output lighthouse.jpg --size 1280x648 --output-format jpeg \
   --quality high --json
 ```
@@ -176,22 +182,22 @@ gpt-image generate "a lighthouse in a storm, gouache" \
 Edit (one or more input images):
 
 ```bash
-gpt-image edit photo.jpg --prompt "make the sky golden hour" --output golden.png
+inkvoke edit photo.jpg --prompt "make the sky golden hour" --output golden.png
 ```
 
 Batch from a manifest:
 
 ```bash
-gpt-image batch manifest.json --output-dir outputs \
+inkvoke batch manifest.json --output-dir outputs \
   --quality high --size 1536x1024 --workers 3 --skip-existing
 ```
 
-`--dry-run` prints the plan without calling the API. `gpt-image version` reports the default model; add `--json` for a structured version envelope.
+`--dry-run` prints the plan without calling the API. `inkvoke version` reports the default model; add `--json` for a structured version envelope.
 
 Hair-color convenience (legacy Arena path):
 
 ```bash
-gpt-image hair-color photo.jpg --output edited.png --color "strawberry blonde"
+inkvoke hair-color photo.jpg --output edited.png --color "strawberry blonde"
 ```
 
 ## Manifest format
@@ -226,11 +232,11 @@ Example:
 Wrote lighthouse.png · ~$0.0531 est. · tokens in=18 out=1760 (text_in=18, img_out=1760) · 41s
 ```
 
-Use `--no-cost` to suppress usage/cost lines. Rates live in `cmd/gpt-image/cost.go` and may lag OpenAI's pricing page.
+Use `--no-cost` to suppress usage/cost lines. Rates live in `cmd/inkvoke/cost.go` and may lag OpenAI's pricing page.
 
 ## Machine-readable output (agents)
 
-Pass `--json` on any command for exactly one JSON object on stdout (progress heartbeats stay on stderr). Exit codes distinguish usage (1), auth (2), permanent API (3), retryable API (4), and local I/O (5). See `AGENTS.md` or `gpt-image --help-agent` for the full agent contract; `docs/specs/agent-interface.md` is the design record.
+Pass `--json` on any command for exactly one JSON object on stdout (progress heartbeats stay on stderr). Exit codes distinguish usage (1), auth (2), permanent API (3), retryable API (4), and local I/O (5). See `AGENTS.md` or `inkvoke --help-agent` for the full agent contract; `docs/specs/agent-interface.md` is the design record.
 
 ## Long-running requests
 
@@ -239,9 +245,9 @@ High-quality `gpt-image-2` calls often take 30–120+ seconds. The CLI prints st
 ## Cross-compile
 
 ```bash
-GOOS=linux   GOARCH=amd64 go build -o dist/gpt-image-linux-amd64   ./cmd/gpt-image
-GOOS=darwin  GOARCH=arm64 go build -o dist/gpt-image-darwin-arm64  ./cmd/gpt-image
-GOOS=windows GOARCH=amd64 go build -o dist/gpt-image-windows-amd64.exe ./cmd/gpt-image
+GOOS=linux   GOARCH=amd64 go build -o dist/inkvoke-linux-amd64   ./cmd/inkvoke
+GOOS=darwin  GOARCH=arm64 go build -o dist/inkvoke-darwin-arm64  ./cmd/inkvoke
+GOOS=windows GOARCH=amd64 go build -o dist/inkvoke-windows-amd64.exe ./cmd/inkvoke
 ```
 
 ## Privacy
