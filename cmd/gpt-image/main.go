@@ -16,12 +16,14 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"golang.org/x/term"
 )
 
 //go:embed agents.md
 var agentsHelp string
 
-const version = "0.3.0"
+const version = "0.3.1"
 
 var (
 	qualities = map[string]bool{"low": true, "medium": true, "high": true, "auto": true}
@@ -37,6 +39,10 @@ func main() {
 
 func run(args []string) int {
 	if len(args) == 0 {
+		// Humans: progressive wizard. Agents/CI (non-TTY): usage help + exit 1.
+		if canInteractive() {
+			return runInteractiveRoot()
+		}
 		printRootHelp(os.Stderr)
 		return exitUsage
 	}
@@ -55,6 +61,8 @@ func run(args []string) int {
 		return exitOK
 	case "version":
 		return cmdVersion(args[1:])
+	case "--uninstall", "uninstall":
+		return cmdUninstall(args[1:])
 	case "generate":
 		return cmdGenerate(args[1:])
 	case "edit":
@@ -101,6 +109,7 @@ func printRootHelp(w io.Writer) {
 
 Usage:
   gpt-image <command> [flags]
+  gpt-image                 Interactive mode (TTY): ask for missing info step by step
 
 Commands:
   generate    Generate an image from a prompt
@@ -108,11 +117,16 @@ Commands:
   batch       Generate or edit many images from a JSON manifest
   hair-color  Convenience edit for hair color (legacy Arena path)
   version     Print version and default model
+  uninstall   Remove this gpt-image binary from disk
+
+  With no command (or a command missing required args) on a terminal, gpt-image
+  prompts one question at a time. Non-interactive runs still require full flags.
 
 Global:
   -h, --help        Show help
   -v, --version     Show version
   --help-agent      Agent-oriented usage (flags, latency, --json)
+  --uninstall       Same as uninstall (remove this binary)
 
 Exit codes:
   0  success
@@ -123,7 +137,7 @@ Exit codes:
   5  local I/O error writing or reading a file
 
 Environment:
-  OPENAI_API_KEY   API key (or pass --api-key-file)
+  OPENAI_API_KEY   API key (or pass --api-key-file, or interactive prompt)
 
 Examples:
   gpt-image generate "a lighthouse in a storm, gouache" --output lighthouse.png --quality high --size 1536x1024
@@ -168,7 +182,7 @@ func addCommonFlags(fs *flag.FlagSet, c *commonFlags) {
 	fs.StringVar(&c.quality, "quality", qualityDef, "Quality: low, medium, high, auto")
 	fs.StringVar(&c.size, "size", sizeDef, "Size: auto, 1024x1024, 1536x1024, 1024x1536, or WIDTHxHEIGHT for gpt-image-2")
 	fs.StringVar(&c.outputFormat, "output-format", formatDef, "Output format: png, jpeg, webp")
-	fs.StringVar(&c.apiKeyFile, "api-key-file", "", "File containing the OpenAI API key (fallback: OPENAI_API_KEY)")
+	fs.StringVar(&c.apiKeyFile, "api-key-file", "", "File containing the OpenAI API key (else OPENAI_API_KEY, else interactive prompt)")
 	fs.BoolVar(&c.noCost, "no-cost", false, "Do not print estimated USD cost / token usage")
 	fs.BoolVar(&c.quiet, "quiet", false, "Suppress progress heartbeats on stderr")
 	fs.BoolVar(&c.jsonMode, "json", false, "Emit exactly one JSON result object on stdout (heartbeats stay on stderr)")
@@ -263,6 +277,25 @@ func reorderFlagArgs(fs *flag.FlagSet, args []string) []string {
 	return append(flags, pos...)
 }
 
+// stdinIsTerminal and readSecretFromTerminal are vars so tests can stub them.
+// Interactive keys are process-memory only for this invocation — never written to disk
+// and never exported into the parent shell.
+var (
+	stdinIsTerminal = func() bool {
+		return term.IsTerminal(int(os.Stdin.Fd()))
+	}
+	readSecretFromTerminal = func() (string, error) {
+		// Prompt and echo-free read on the controlling terminal (stdin when TTY).
+		fmt.Fprint(os.Stderr, "OpenAI API key (not saved): ")
+		b, err := term.ReadPassword(int(os.Stdin.Fd()))
+		fmt.Fprintln(os.Stderr) // finish the input line after hidden typing
+		if err != nil {
+			return "", err
+		}
+		return strings.TrimSpace(string(b)), nil
+	}
+)
+
 func resolveAPIKey(path string) (string, error) {
 	if path != "" {
 		b, err := os.ReadFile(expandHome(path))
@@ -276,10 +309,22 @@ func resolveAPIKey(path string) (string, error) {
 		return key, nil
 	}
 	key := strings.TrimSpace(os.Getenv("OPENAI_API_KEY"))
-	if key == "" {
-		return "", authf("missing API key: set OPENAI_API_KEY or pass --api-key-file /path/to/key.txt")
+	if key != "" {
+		return key, nil
 	}
-	return key, nil
+	// Interactive humans: prompt once for this process. Agents/CI (non-TTY) fail closed.
+	if stdinIsTerminal() {
+		raw, err := readSecretFromTerminal()
+		if err != nil {
+			return "", authf("read API key: %v", err)
+		}
+		key = strings.TrimSpace(raw)
+		if key == "" {
+			return "", authf("missing API key: empty key entered (set OPENAI_API_KEY or pass --api-key-file)")
+		}
+		return key, nil
+	}
+	return "", authf("missing API key: set OPENAI_API_KEY, pass --api-key-file /path/to/key.txt, or run in a terminal to be prompted")
 }
 
 func expandHome(p string) string {
@@ -326,20 +371,31 @@ Flags:
 	}
 	jsonMode := common.jsonMode
 	rest := fs.Args()
-	if len(rest) < 1 {
-		if jsonMode {
-			return emitFailure(command, usagef("missing prompt"), true)
-		}
-		fs.Usage()
-		return exitUsage
+	var prompt string
+	if len(rest) >= 1 {
+		prompt = rest[0]
 	}
-	prompt := rest[0]
 	if prompt == "-" {
+		// "-" means read prompt from stdin; not compatible with the interactive wizard.
 		b, err := io.ReadAll(os.Stdin)
 		if err != nil {
 			return emitFailure(command, iof("read stdin: %v", err), jsonMode)
 		}
 		prompt = strings.TrimSpace(string(b))
+	}
+	if strings.TrimSpace(prompt) == "" {
+		if jsonMode || !canInteractive() {
+			if jsonMode {
+				return emitFailure(command, usagef("missing prompt"), true)
+			}
+			fs.Usage()
+			return exitUsage
+		}
+		filled, err := fillGenerateInteractively(&output, &common)
+		if err != nil {
+			return emitFailure(command, err, false)
+		}
+		prompt = filled
 	}
 	if strings.TrimSpace(prompt) == "" {
 		return emitFailure(command, usagef("prompt is empty"), jsonMode)
@@ -390,12 +446,23 @@ Flags:
 	}
 	jsonMode := common.jsonMode
 	images := fs.Args()
-	if len(images) < 1 {
-		if jsonMode {
-			return emitFailure(command, usagef("missing input image"), true)
+	if len(images) < 1 || strings.TrimSpace(prompt) == "" {
+		if jsonMode || !canInteractive() {
+			if len(images) < 1 {
+				if jsonMode {
+					return emitFailure(command, usagef("missing input image"), true)
+				}
+				fs.Usage()
+				return exitUsage
+			}
+			return emitFailure(command, usagef("--prompt is required"), jsonMode)
 		}
-		fs.Usage()
-		return exitUsage
+		if err := fillEditInteractively(&images, &prompt, &output, &common); err != nil {
+			return emitFailure(command, err, false)
+		}
+	}
+	if len(images) < 1 {
+		return emitFailure(command, usagef("missing input image"), jsonMode)
 	}
 	if strings.TrimSpace(prompt) == "" {
 		return emitFailure(command, usagef("--prompt is required"), jsonMode)
@@ -460,11 +527,36 @@ Flags:
 	jsonMode := common.jsonMode
 	images := fs.Args()
 	if len(images) != 1 {
-		if jsonMode {
-			return emitFailure(command, usagef("hair-color expects exactly one input image"), true)
+		if jsonMode || !canInteractive() {
+			if jsonMode {
+				return emitFailure(command, usagef("hair-color expects exactly one input image"), true)
+			}
+			fs.Usage()
+			return exitUsage
 		}
-		fs.Usage()
-		return exitUsage
+		img, err := fillHairColorInteractively()
+		if err != nil {
+			return emitFailure(command, err, false)
+		}
+		images = []string{img}
+		if strings.TrimSpace(color) == "strawberry blonde" {
+			// Offer override when wizard-filling the only missing image path.
+			c, err := promptLine("Hair color", color, false)
+			if err != nil {
+				return emitFailure(command, err, false)
+			}
+			color = c
+		}
+		if output == "edited.png" {
+			o, err := promptLine("Output path", output, false)
+			if err != nil {
+				return emitFailure(command, err, false)
+			}
+			output = o
+		}
+	}
+	if len(images) != 1 {
+		return emitFailure(command, usagef("hair-color expects exactly one input image"), jsonMode)
 	}
 	if err := common.validate(); err != nil {
 		return emitFailure(command, &usageError{msg: err.Error()}, jsonMode)
@@ -622,11 +714,26 @@ Flags:
 	jsonMode := common.jsonMode
 	rest := fs.Args()
 	if len(rest) != 1 {
-		if jsonMode {
-			return emitFailure(command, usagef("batch expects a manifest.json path"), true)
+		if jsonMode || !canInteractive() {
+			if jsonMode {
+				return emitFailure(command, usagef("batch expects a manifest.json path"), true)
+			}
+			fs.Usage()
+			return exitUsage
 		}
-		fs.Usage()
-		return exitUsage
+		m, err := fillBatchInteractively()
+		if err != nil {
+			return emitFailure(command, err, false)
+		}
+		rest = []string{m}
+		od, err := promptLine("Output directory", outputDir, false)
+		if err != nil {
+			return emitFailure(command, err, false)
+		}
+		outputDir = od
+	}
+	if len(rest) != 1 {
+		return emitFailure(command, usagef("batch expects a manifest.json path"), jsonMode)
 	}
 	if workers < 1 {
 		return emitFailure(command, usagef("--workers must be >= 1"), jsonMode)

@@ -8,6 +8,8 @@ curl -fsSL -o /usr/local/bin/gpt-image \
   https://github.com/JacobStephens2/gpt-image/releases/latest/download/gpt-image-linux-amd64
 chmod +x /usr/local/bin/gpt-image
 export OPENAI_API_KEY="..."          # or pass --api-key-file /path/to/key
+# Humans may omit both and be prompted once (TTY only). Agents: always set env or file.
+# Humans may also run bare `gpt-image` for a progressive wizard (TTY only). Agents: always pass full args.
 
 gpt-image generate "<prompt>" --output out.jpg \
   --size 1280x648 --output-format jpeg --quality high --json
@@ -29,6 +31,8 @@ shell out to ImageMagick, Pillow, or a wrapper script:
 | Longer/shorter deadline | `--timeout <seconds>` | Default 300. |
 | Suppress the cost line | `--no-cost` | Leave it on if you report spend (also omits cost fields under `--json`). |
 | Key outside the environment | `--api-key-file <path>` | Avoids the key entering shell history. |
+| Interactive key (humans only) | (none) | If no env/file and stdin is a TTY, prompts once; key is process-memory only. Agents must set env or file — non-TTY never prompts. |
+| Uninstall this binary | `--uninstall` / `uninstall` | Deletes the running binary only. Prefer manual `rm` in agent sandboxes. |
 | Many images | `batch <manifest.json>` | `--workers`, `--skip-existing`, `--dry-run`. |
 | Default model in use | `version` / `version --json` | Reports CLI version and default model (`gpt-image-2`). |
 

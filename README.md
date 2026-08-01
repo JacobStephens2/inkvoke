@@ -10,7 +10,51 @@ Written in Go - single static binary, no Python runtime. Started as a hair-color
 
 ### Binary (recommended)
 
-Download a release from [GitHub Releases](https://github.com/JacobStephens2/gpt-image/releases) (linux/macOS/Windows). Example for Linux amd64:
+Download a release from [GitHub Releases](https://github.com/JacobStephens2/gpt-image/releases). Pick the asset that matches **both** your OS and CPU architecture. Using the wrong file (for example a Linux binary on macOS, or `amd64` on Apple Silicon without Rosetta) fails with errors like `exec format error` or "cannot be opened because the developer cannot be verified" / wrong architecture.
+
+#### Which binary? (`amd64` vs `arm64`)
+
+| Suffix | CPU | Typical machines |
+|--------|-----|------------------|
+| **`amd64`** | Intel/AMD 64-bit (x86_64) | Most Windows/Linux PCs; older Intel Macs |
+| **`arm64`** | ARM 64-bit (aarch64) | Apple Silicon Macs (M1/M2/M3/M4…); many Raspberry Pi / AWS Graviton hosts |
+
+- **macOS Apple Silicon** → `gpt-image-darwin-arm64` (not `linux-*`, not `darwin-amd64` unless you run under Rosetta)
+- **macOS Intel** → `gpt-image-darwin-amd64`
+- **Linux x86_64** → `gpt-image-linux-amd64`
+- **Linux ARM64** → `gpt-image-linux-arm64`
+- **Windows x86_64** → `gpt-image-windows-amd64.exe`
+
+Check your machine if unsure:
+
+```bash
+uname -s   # Darwin = macOS, Linux = Linux
+uname -m   # arm64/aarch64 → arm64; x86_64 → amd64
+```
+
+Assets also include `SHA256SUMS` for integrity checks.
+
+#### macOS (Apple Silicon — arm64)
+
+```bash
+curl -fsSL -o gpt-image \
+  https://github.com/JacobStephens2/gpt-image/releases/latest/download/gpt-image-darwin-arm64
+chmod +x gpt-image
+sudo mv gpt-image /usr/local/bin/gpt-image
+gpt-image version
+```
+
+#### macOS (Intel — amd64)
+
+```bash
+curl -fsSL -o gpt-image \
+  https://github.com/JacobStephens2/gpt-image/releases/latest/download/gpt-image-darwin-amd64
+chmod +x gpt-image
+sudo mv gpt-image /usr/local/bin/gpt-image
+gpt-image version
+```
+
+#### Linux (amd64)
 
 ```bash
 curl -fsSL -o gpt-image \
@@ -20,7 +64,38 @@ sudo mv gpt-image /usr/local/bin/gpt-image
 gpt-image version
 ```
 
-Assets: `gpt-image-linux-amd64`, `gpt-image-linux-arm64`, `gpt-image-darwin-amd64`, `gpt-image-darwin-arm64`, `gpt-image-windows-amd64.exe`, plus `SHA256SUMS`.
+#### Linux (arm64)
+
+```bash
+curl -fsSL -o gpt-image \
+  https://github.com/JacobStephens2/gpt-image/releases/latest/download/gpt-image-linux-arm64
+chmod +x gpt-image
+sudo mv gpt-image /usr/local/bin/gpt-image
+gpt-image version
+```
+
+#### Windows (amd64)
+
+Download [`gpt-image-windows-amd64.exe`](https://github.com/JacobStephens2/gpt-image/releases/latest/download/gpt-image-windows-amd64.exe) from Releases, rename to `gpt-image.exe` if you like, put it on your `PATH`, then run `gpt-image version`.
+
+#### Uninstall
+
+Remove the binary that `gpt-image` is running from:
+
+```bash
+gpt-image --uninstall
+# or: gpt-image uninstall
+```
+
+If the file is root-owned (common for `/usr/local/bin`):
+
+```bash
+sudo gpt-image --uninstall
+```
+
+That only deletes the installed binary — not API keys, generated images, or shell config. After uninstall, run `hash -r` (zsh/bash) or open a new terminal so the shell drops a cached path.
+
+Manual alternative: `sudo rm /usr/local/bin/gpt-image`, or delete `$(go env GOPATH)/bin/gpt-image` if you used `go install`.
 
 ### With Go 1.22+
 
@@ -41,11 +116,17 @@ go build -o gpt-image ./cmd/gpt-image
 
 ### API key (required)
 
-Every `generate`, `edit`, and `batch` call needs an OpenAI API key with access to image models. Create one in the [OpenAI dashboard](https://platform.openai.com/api-keys). Without a key the CLI exits with `missing API key`.
+Every `generate`, `edit`, and `batch` call needs an OpenAI API key with access to image models. Create one in the [OpenAI dashboard](https://platform.openai.com/api-keys). Resolution order:
+
+1. `--api-key-file /path/to/key.txt` (if passed)
+2. `OPENAI_API_KEY` in the environment
+3. **Interactive prompt** when stdin is a terminal: `OpenAI API key (not saved):` (typed characters are hidden). The key is held only in process memory for that one command, then discarded when the process exits. It is **not** written to disk and **not** exported into your shell.
 
 ```bash
 export OPENAI_API_KEY="<your_openai_api_key>"
 ```
+
+`export` keeps the key in **your shell session** (and child processes inherit it) until you `unset OPENAI_API_KEY` or close the terminal. It is not the same as the interactive prompt, and it only lands on disk if you put the export in a startup file (e.g. `~/.zshrc`).
 
 Or keep the key in a local file outside the repo (preferred if you do not want it in shell history) and pass the file to any command:
 
@@ -55,11 +136,25 @@ gpt-image generate "a lighthouse in a storm, gouache" \
   --output lighthouse.png
 ```
 
+Agents and CI (non-interactive / no TTY) are not prompted — they must set the env var or pass `--api-key-file`, or the CLI exits with auth error code 2.
+
 Do not commit API keys. The repo `.gitignore` already excludes common local key filenames.
 
 ## Usage
 
-Generate:
+### Interactive mode (terminal)
+
+If you run `gpt-image` with no arguments on a terminal, or run a command without its required args (for example `gpt-image generate` with no prompt), the CLI asks **one question at a time** until it has enough to run. Press Enter to accept a shown default. Agents and non-TTY environments are never prompted this way — they still need full flags (and get usage/auth exit codes).
+
+```bash
+gpt-image
+# Command (generate/edit/batch/hair-color) [generate]:
+# Image prompt: …
+# Output path [generated.png]:
+# …
+```
+
+### Generate
 
 ```bash
 gpt-image generate "a lighthouse in a storm, gouache" \
