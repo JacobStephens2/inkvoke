@@ -8,6 +8,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"time"
 )
 
 // Shared line reader so multi-line pastes are not lost between questions.
@@ -79,51 +80,103 @@ func promptLine(label, def string, required bool) (string, error) {
 	}
 }
 
-// promptMultiline collects an image/edit prompt that may contain newlines.
-// Finish with a line that is only "---", or Ctrl-D (EOF). Blank lines inside
-// the prompt are kept. Using single-line ReadString for this field used to
-// treat each pasted line as the next wizard answer and break the session.
+// pasteIdle is how long we wait for another line after receiving one.
+// Clipboard pastes arrive as a burst; a single typed line + Enter finishes
+// after this idle window. Optional "---" still ends input immediately.
+var pasteIdle = 300 * time.Millisecond
+
+// stdinHasMore is stubbed in tests. Production uses poll on stdin (unix).
+var stdinHasMore = func(idle time.Duration) bool {
+	return stdinBuffered() > 0 || stdinReadable(idle)
+}
+
+func stdinBuffered() int {
+	stdinMu.Lock()
+	defer stdinMu.Unlock()
+	if stdinReader == nil {
+		return 0
+	}
+	return stdinReader.Buffered()
+}
+
+// promptMultiline collects an image/edit prompt as plain text for the API.
+// Whatever the user types or pastes (including blank lines and multi-paragraph
+// text) becomes the prompt string. Multi-line paste is auto-captured by
+// draining stdin until idle; optional "---" or Ctrl-D also ends input.
 func promptMultiline(label string) (string, error) {
 	return promptMultilineStartingWith(label, "")
 }
 
 func promptMultilineStartingWith(label, firstLine string) (string, error) {
 	fmt.Fprintf(os.Stderr, "%s\n", label)
-	fmt.Fprintln(os.Stderr, "  (paste multi-line text OK; finish with a line containing only ---  or Ctrl-D)")
+	fmt.Fprintln(os.Stderr, "  (type one line + Enter, or paste any multi-line text — it is sent as-is to the API)")
 	for {
 		var lines []string
-		if strings.TrimSpace(firstLine) != "" {
-			lines = append(lines, firstLine)
-			firstLine = "" // only seed once
-			fmt.Fprintln(os.Stderr, "  (…captured leading lines from paste; continue or type --- when done)")
-		}
-		for {
+		if firstLine != "" {
+			// Seed from Command-line paste recovery; do not re-print a prompt.
+			lines = append(lines, strings.TrimRight(firstLine, "\r\n"))
+			firstLine = ""
+			fmt.Fprintln(os.Stderr, "  (…capturing pasted prompt)")
+		} else {
 			raw, err := readLineFromTerminal("> ")
 			if err != nil {
 				if errors.Is(err, io.EOF) {
-					break
+					// empty EOF
+				} else if strings.TrimSpace(raw) != "" {
+					lines = append(lines, raw)
+				} else {
+					return "", usagef("read input: %v", err)
 				}
-				// EOF with partial line already returned by readLineFromTerminal.
-				if strings.TrimSpace(raw) != "" || len(lines) > 0 {
-					if strings.TrimSpace(raw) != "" {
-						lines = append(lines, raw)
-					}
-					break
-				}
-				return "", usagef("read input: %v", err)
+			} else if strings.TrimSpace(raw) == "---" {
+				// ignore lone terminator with no content
+			} else {
+				lines = append(lines, raw)
 			}
-			if strings.TrimSpace(raw) == "---" {
-				break
-			}
-			lines = append(lines, raw)
 		}
+
+		// Drain remaining lines from a multi-line paste (or until --- / EOF).
+		more, err := drainPromptLines()
+		if err != nil {
+			return "", err
+		}
+		lines = append(lines, more...)
+
 		text := strings.TrimRight(strings.Join(lines, "\n"), "\r\n")
 		if strings.TrimSpace(text) == "" {
-			fmt.Fprintln(os.Stderr, "  (required — enter a prompt, then --- on its own line)")
+			fmt.Fprintln(os.Stderr, "  (required — enter or paste a prompt)")
 			continue
 		}
+		// One normalized string for the Images API (newlines preserved).
 		return text, nil
 	}
+}
+
+// drainPromptLines reads additional lines while stdin still has paste data,
+// or until the user types "---" / sends EOF. Blank lines inside the paste
+// are preserved as empty strings in the slice (joined with \n later).
+func drainPromptLines() ([]string, error) {
+	var lines []string
+	for {
+		if stdinBuffered() == 0 && !stdinHasMore(pasteIdle) {
+			break
+		}
+		// No prompt prefix for drained lines — avoids garbling pasted output.
+		raw, err := readLineFromTerminal("")
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			if strings.TrimSpace(raw) != "" {
+				lines = append(lines, raw)
+			}
+			break
+		}
+		if strings.TrimSpace(raw) == "---" {
+			break
+		}
+		lines = append(lines, raw)
+	}
+	return lines, nil
 }
 
 // promptChoice asks until the answer is one of options (case-insensitive).
@@ -195,7 +248,7 @@ func looksLikePastedPrompt(s string) bool {
 // runInteractiveRoot is the wizard for bare `gpt-image` with no args.
 func runInteractiveRoot() int {
 	fmt.Fprintln(os.Stderr, "gpt-image interactive mode (Enter accepts defaults where shown)")
-	fmt.Fprintln(os.Stderr, "Tip: press Enter for generate, then paste your image prompt; end the prompt with a line containing only ---")
+	fmt.Fprintln(os.Stderr, "Tip: press Enter for generate, then type or paste your image prompt (multi-line paste is captured automatically)")
 	cmd, err := promptChoiceOpts("Command", []string{"generate", "edit", "batch", "hair-color"}, "generate", true)
 	if err != nil {
 		if errors.Is(err, errLongChoice) {

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 )
 
 func withLineAnswers(t *testing.T, answers ...string) {
@@ -60,8 +61,9 @@ func TestPromptChoice(t *testing.T) {
 }
 
 func TestFillGenerateInteractively(t *testing.T) {
-	// Multi-line prompt ends with --- so paste does not steal later answers.
-	withLineAnswers(t, "a lighthouse", "in a storm", "---", "out.png", "high", "1536x1024", "jpeg")
+	// Multi-line paste: first line + drained lines; stdinHasMore controls drain.
+	withLineAnswers(t, "a lighthouse", "in a storm", "out.png", "high", "1536x1024", "jpeg")
+	withPasteLines(t, 1) // after first line, one more available then idle
 	output := "generated.png"
 	common := commonFlags{quality: "auto", size: "auto", outputFormat: "png"}
 	prompt, err := fillGenerateInteractively(&output, &common)
@@ -77,7 +79,9 @@ func TestFillGenerateInteractively(t *testing.T) {
 }
 
 func TestPromptMultilineKeepsBlankLines(t *testing.T) {
-	withLineAnswers(t, "para one", "", "para two", "---")
+	// first line, then drain two more (blank + para two)
+	withLineAnswers(t, "para one", "", "para two")
+	withPasteLines(t, 2)
 	got, err := promptMultiline("Image prompt")
 	if err != nil {
 		t.Fatal(err)
@@ -88,8 +92,26 @@ func TestPromptMultilineKeepsBlankLines(t *testing.T) {
 	}
 }
 
+func TestPromptMultilineSingleLine(t *testing.T) {
+	withLineAnswers(t, "just one line")
+	withPasteLines(t, 0) // idle immediately after first line
+	got, err := promptMultiline("Image prompt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "just one line" {
+		t.Fatalf("got %q", got)
+	}
+}
+
 func TestPromptMultilineRejectsEmpty(t *testing.T) {
-	withLineAnswers(t, "---", "ok", "---")
+	withLineAnswers(t, "", "ok")
+	withPasteLines(t, 0)
+	// empty first attempt re-asks; second is "ok"
+	// need paste idle for both - withPasteLines only for drains after non-empty
+	orig := stdinHasMore
+	stdinHasMore = func(time.Duration) bool { return false }
+	t.Cleanup(func() { stdinHasMore = orig })
 	got, err := promptMultiline("Image prompt")
 	if err != nil {
 		t.Fatal(err)
@@ -97,6 +119,21 @@ func TestPromptMultilineRejectsEmpty(t *testing.T) {
 	if got != "ok" {
 		t.Fatalf("got %q", got)
 	}
+}
+
+// withPasteLines stubs stdinHasMore to return true n times (for drain), then false.
+func withPasteLines(t *testing.T, n int) {
+	t.Helper()
+	orig := stdinHasMore
+	left := n
+	stdinHasMore = func(time.Duration) bool {
+		if left > 0 {
+			left--
+			return true
+		}
+		return false
+	}
+	t.Cleanup(func() { stdinHasMore = orig })
 }
 
 func TestRunEmptyArgsNonInteractiveStillUsage(t *testing.T) {
@@ -131,8 +168,8 @@ func TestRunInteractiveRootGenerateBuildsThroughToAuth(t *testing.T) {
 		readSecretFromTerminal = origSecret
 	})
 	stdinIsTerminal = func() bool { return true }
-	// command, multi-line prompt + ---, output, quality, size, format
-	answers := []string{"generate", "a cat", "---", "x.png", "low", "1024x1024", "png"}
+	// command, single-line prompt (auto-end), output, quality, size, format
+	answers := []string{"generate", "a cat", "x.png", "low", "1024x1024", "png"}
 	i := 0
 	readLineFromTerminal = func(prompt string) (string, error) {
 		if i >= len(answers) {
@@ -142,6 +179,9 @@ func TestRunInteractiveRootGenerateBuildsThroughToAuth(t *testing.T) {
 		i++
 		return a, nil
 	}
+	origMore := stdinHasMore
+	stdinHasMore = func(time.Duration) bool { return false }
+	t.Cleanup(func() { stdinHasMore = origMore })
 	// After wizard, resolveAPIKey will try secret prompt because TTY + empty env.
 	// Return empty so we get auth exit without calling API.
 	readSecretFromTerminal = func() (string, error) { return "", nil }
@@ -198,11 +238,10 @@ func TestRunInteractiveRootRecoversPasteOnCommand(t *testing.T) {
 		readSecretFromTerminal = origSecret
 	})
 	stdinIsTerminal = func() bool { return true }
-	// Paste lands on Command; rest is multi-line prompt ended by ---; then defaults.
+	// Paste lands on Command; second paragraph drained as paste; then defaults.
 	answers := []string{
 		"Clean educational infographic visualizing CrMS",
 		"second paragraph of the prompt",
-		"---",
 		"", // output default
 		"", // quality default
 		"", // size default
@@ -217,6 +256,17 @@ func TestRunInteractiveRootRecoversPasteOnCommand(t *testing.T) {
 		i++
 		return a, nil
 	}
+	// One drained line after the seeded first line.
+	left := 1
+	origMore := stdinHasMore
+	stdinHasMore = func(time.Duration) bool {
+		if left > 0 {
+			left--
+			return true
+		}
+		return false
+	}
+	t.Cleanup(func() { stdinHasMore = origMore })
 	readSecretFromTerminal = func() (string, error) { return "", nil }
 	code := run([]string{})
 	if code != exitAuth {
