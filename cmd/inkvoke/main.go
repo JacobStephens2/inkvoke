@@ -23,7 +23,7 @@ import (
 //go:embed agents.md
 var agentsHelp string
 
-const version = "1.0.0"
+const version = "1.0.1"
 
 var (
 	qualities = map[string]bool{"low": true, "medium": true, "high": true, "auto": true}
@@ -414,13 +414,18 @@ Flags:
 	}
 	started := time.Now()
 	opts := common.options()
+	// Validate path before spending API credits when possible.
+	output = resolveOutputPath(output, "generated.png", common.outputFormat, !jsonMode)
 	result, err := client.Generate(context.Background(), prompt, opts)
 	if err != nil {
 		return emitFailure(command, err, jsonMode)
 	}
-	written, err := WriteImage(result, expandHome(output))
+	written, err := writeImageResult(result, expandHome(output), common.outputFormat)
 	if err != nil {
 		return emitFailure(command, iof("%v", err), jsonMode)
+	}
+	if !jsonMode {
+		fmt.Fprintf(os.Stderr, "saved: %s\n", written)
 	}
 	emitWrote(command, written, result, opts, time.Since(started), jsonMode, common.noCost)
 	return exitOK
@@ -488,13 +493,17 @@ Flags:
 	}
 	started := time.Now()
 	opts := common.options()
+	output = resolveOutputPath(output, "edited.png", common.outputFormat, !jsonMode)
 	result, err := client.Edit(context.Background(), paths, prompt, opts)
 	if err != nil {
 		return emitFailure(command, err, jsonMode)
 	}
-	written, err := WriteImage(result, expandHome(output))
+	written, err := writeImageResult(result, expandHome(output), common.outputFormat)
 	if err != nil {
 		return emitFailure(command, iof("%v", err), jsonMode)
+	}
+	if !jsonMode {
+		fmt.Fprintf(os.Stderr, "saved: %s\n", written)
 	}
 	emitWrote(command, written, result, opts, time.Since(started), jsonMode, common.noCost)
 	return exitOK
@@ -594,13 +603,17 @@ Flags:
 	}
 	started := time.Now()
 	opts := common.options()
+	output = resolveOutputPath(output, "edited.png", common.outputFormat, !jsonMode)
 	result, err := client.Edit(context.Background(), []string{imagePath}, editPrompt, opts)
 	if err != nil {
 		return emitFailure(command, err, jsonMode)
 	}
-	written, err := WriteImage(result, expandHome(output))
+	written, err := writeImageResult(result, expandHome(output), common.outputFormat)
 	if err != nil {
 		return emitFailure(command, iof("%v", err), jsonMode)
+	}
+	if !jsonMode {
+		fmt.Fprintf(os.Stderr, "saved: %s\n", written)
 	}
 	emitWrote(command, written, result, opts, time.Since(started), jsonMode, common.noCost)
 	return exitOK
@@ -873,7 +886,7 @@ Flags:
 				mu.Unlock()
 				return
 			}
-			written, err := WriteImage(result, j.output)
+			written, err := writeImageResult(result, j.output, j.options.OutputFormat)
 			if err != nil {
 				failures.Add(1)
 				mu.Lock()

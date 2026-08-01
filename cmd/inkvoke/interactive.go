@@ -140,8 +140,14 @@ func promptMultilineStartingWith(label, firstLine string) (string, error) {
 			return "", err
 		}
 		lines = append(lines, more...)
+		// Pastes often omit a trailing newline on the last line; pull that partial
+		// into the prompt so it is not left for "Output path" to read next.
+		if partial := takeBufferedPartial(); partial != "" {
+			lines = append(lines, partial)
+		}
 
 		text := strings.TrimRight(strings.Join(lines, "\n"), "\r\n")
+		text = normalizeInteractivePrompt(text)
 		if strings.TrimSpace(text) == "" {
 			fmt.Fprintln(os.Stderr, "  (required — enter or paste a prompt)")
 			continue
@@ -177,6 +183,31 @@ func drainPromptLines() ([]string, error) {
 		lines = append(lines, raw)
 	}
 	return lines, nil
+}
+
+// takeBufferedPartial consumes any bytes already in the shared reader that do
+// not yet form a complete line (no trailing newline). Returns "" if none.
+func takeBufferedPartial() string {
+	n := stdinBuffered()
+	if n <= 0 {
+		return ""
+	}
+	buf := make([]byte, n)
+	nr, err := lineReader().Read(buf)
+	if nr <= 0 {
+		_ = err
+		return ""
+	}
+	return strings.TrimRight(string(buf[:nr]), "\r\n")
+}
+
+// promptOutputPath asks for a file path and rejects leftover paste prose.
+func promptOutputPath(def string) (string, error) {
+	raw, err := promptLine("Output path", def, false)
+	if err != nil {
+		return "", err
+	}
+	return resolveOutputPath(raw, def, "", true), nil
 }
 
 // promptChoice asks until the answer is one of options (case-insensitive).
@@ -282,7 +313,7 @@ func interactiveGenerateStartingWith(firstLine string) int {
 	if err != nil {
 		return emitFailure("generate", err, false)
 	}
-	output, err := promptLine("Output path", "generated.png", false)
+	output, err := promptOutputPath("generated.png")
 	if err != nil {
 		return emitFailure("generate", err, false)
 	}
@@ -298,6 +329,7 @@ func interactiveGenerateStartingWith(firstLine string) int {
 	if err != nil {
 		return emitFailure("generate", err, false)
 	}
+	output = resolveOutputPath(output, "generated.png", format, true)
 	args := []string{
 		prompt,
 		"--output", output,
@@ -316,7 +348,7 @@ func fillGenerateInteractively(output *string, common *commonFlags) (prompt stri
 	if err != nil {
 		return "", err
 	}
-	out, err := promptLine("Output path", *output, false)
+	out, err := promptOutputPath(*output)
 	if err != nil {
 		return "", err
 	}
@@ -336,6 +368,7 @@ func fillGenerateInteractively(output *string, common *commonFlags) (prompt stri
 		return "", err
 	}
 	common.outputFormat = outFmt
+	*output = resolveOutputPath(*output, "generated.png", common.outputFormat, true)
 	return prompt, nil
 }
 
