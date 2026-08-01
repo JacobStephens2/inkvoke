@@ -146,10 +146,15 @@ Do not commit API keys. The repo `.gitignore` already excludes common local key 
 
 If you run `gpt-image` with no arguments on a terminal, or run a command without its required args (for example `gpt-image generate` with no prompt), the CLI asks **one question at a time** until it has enough to run. Press Enter to accept a shown default. Agents and non-TTY environments are never prompted this way — they still need full flags (and get usage/auth exit codes).
 
+**Image / edit prompts are multi-line:** paste freely (blank lines allowed), then finish with a line containing only `---` (or Ctrl-D). That stops a long paste from being misread as later answers (output path, quality, size).
+
 ```bash
 gpt-image
 # Command (generate/edit/batch/hair-color) [generate]:
-# Image prompt: …
+# Image prompt
+#   (paste multi-line text OK; finish with a line containing only ---  or Ctrl-D)
+# > a lighthouse …
+# > ---
 # Output path [generated.png]:
 # …
 ```

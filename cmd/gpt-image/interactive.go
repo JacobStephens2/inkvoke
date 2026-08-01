@@ -2,16 +2,43 @@ package main
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"strings"
+	"sync"
 )
+
+// Shared line reader so multi-line pastes are not lost between questions.
+// Creating a new bufio.Reader per question discards buffered lines and makes
+// pasted prompts "eat" the next wizard answers (output path, quality, …).
+var (
+	stdinMu     sync.Mutex
+	stdinReader *bufio.Reader
+)
+
+func lineReader() *bufio.Reader {
+	stdinMu.Lock()
+	defer stdinMu.Unlock()
+	if stdinReader == nil {
+		stdinReader = bufio.NewReader(os.Stdin)
+	}
+	return stdinReader
+}
+
+// resetLineReader is for tests that replace readLineFromTerminal entirely;
+// production code relies on a single reader for the process lifetime.
+func resetLineReader() {
+	stdinMu.Lock()
+	defer stdinMu.Unlock()
+	stdinReader = nil
+}
 
 // readLineFromTerminal is stubbed in tests. Prompts go to stderr; answers from stdin.
 var readLineFromTerminal = func(prompt string) (string, error) {
 	fmt.Fprint(os.Stderr, prompt)
-	reader := bufio.NewReader(os.Stdin)
-	line, err := reader.ReadString('\n')
+	line, err := lineReader().ReadString('\n')
 	if err != nil {
 		// Allow EOF after a non-empty line (e.g. piped single answer in tests).
 		if line != "" {
@@ -52,9 +79,65 @@ func promptLine(label, def string, required bool) (string, error) {
 	}
 }
 
+// promptMultiline collects an image/edit prompt that may contain newlines.
+// Finish with a line that is only "---", or Ctrl-D (EOF). Blank lines inside
+// the prompt are kept. Using single-line ReadString for this field used to
+// treat each pasted line as the next wizard answer and break the session.
+func promptMultiline(label string) (string, error) {
+	return promptMultilineStartingWith(label, "")
+}
+
+func promptMultilineStartingWith(label, firstLine string) (string, error) {
+	fmt.Fprintf(os.Stderr, "%s\n", label)
+	fmt.Fprintln(os.Stderr, "  (paste multi-line text OK; finish with a line containing only ---  or Ctrl-D)")
+	for {
+		var lines []string
+		if strings.TrimSpace(firstLine) != "" {
+			lines = append(lines, firstLine)
+			firstLine = "" // only seed once
+			fmt.Fprintln(os.Stderr, "  (…captured leading lines from paste; continue or type --- when done)")
+		}
+		for {
+			raw, err := readLineFromTerminal("> ")
+			if err != nil {
+				if errors.Is(err, io.EOF) {
+					break
+				}
+				// EOF with partial line already returned by readLineFromTerminal.
+				if strings.TrimSpace(raw) != "" || len(lines) > 0 {
+					if strings.TrimSpace(raw) != "" {
+						lines = append(lines, raw)
+					}
+					break
+				}
+				return "", usagef("read input: %v", err)
+			}
+			if strings.TrimSpace(raw) == "---" {
+				break
+			}
+			lines = append(lines, raw)
+		}
+		text := strings.TrimRight(strings.Join(lines, "\n"), "\r\n")
+		if strings.TrimSpace(text) == "" {
+			fmt.Fprintln(os.Stderr, "  (required — enter a prompt, then --- on its own line)")
+			continue
+		}
+		return text, nil
+	}
+}
+
 // promptChoice asks until the answer is one of options (case-insensitive).
 // def may be empty; if set, Enter accepts def.
+// If rejectLong is true and the answer is not an option but looks like a pasted
+// paragraph (spaces / long), returns that text with err == errLongChoice so the
+// caller can recover (e.g. treat as a generate prompt).
+var errLongChoice = errors.New("long non-choice input")
+
 func promptChoice(label string, options []string, def string) (string, error) {
+	return promptChoiceOpts(label, options, def, false)
+}
+
+func promptChoiceOpts(label string, options []string, def string, rejectLong bool) (string, error) {
 	optSet := make(map[string]string, len(options))
 	for _, o := range options {
 		optSet[strings.ToLower(o)] = o
@@ -82,15 +165,44 @@ func promptChoice(label string, options []string, def string) (string, error) {
 		if canon, ok := optSet[strings.ToLower(ans)]; ok {
 			return canon, nil
 		}
-		fmt.Fprintf(os.Stderr, "  (unknown %q — pick one of: %s)\n", ans, hint)
+		if rejectLong && looksLikePastedPrompt(ans) {
+			return ans, errLongChoice
+		}
+		// Show a short preview so a pasted paragraph does not flood the terminal.
+		preview := ans
+		if len(preview) > 60 {
+			preview = preview[:57] + "..."
+		}
+		fmt.Fprintf(os.Stderr, "  (unknown %q — pick one of: %s)\n", preview, hint)
 	}
+}
+
+func looksLikePastedPrompt(s string) bool {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return false
+	}
+	// Real commands are single short tokens; pastes are sentences / multi-word.
+	if strings.ContainsAny(s, " \t") && len(s) > 12 {
+		return true
+	}
+	if len(s) > 40 {
+		return true
+	}
+	return false
 }
 
 // runInteractiveRoot is the wizard for bare `gpt-image` with no args.
 func runInteractiveRoot() int {
 	fmt.Fprintln(os.Stderr, "gpt-image interactive mode (Enter accepts defaults where shown)")
-	cmd, err := promptChoice("Command", []string{"generate", "edit", "batch", "hair-color"}, "generate")
+	fmt.Fprintln(os.Stderr, "Tip: press Enter for generate, then paste your image prompt; end the prompt with a line containing only ---")
+	cmd, err := promptChoiceOpts("Command", []string{"generate", "edit", "batch", "hair-color"}, "generate", true)
 	if err != nil {
+		if errors.Is(err, errLongChoice) {
+			// User pasted the image prompt on the Command line — recover.
+			fmt.Fprintln(os.Stderr, "  (looks like an image prompt — using command generate)")
+			return interactiveGenerateStartingWith(cmd)
+		}
 		return emitFailure("", err, false)
 	}
 	switch cmd {
@@ -108,8 +220,12 @@ func runInteractiveRoot() int {
 }
 
 func interactiveGenerate() int {
+	return interactiveGenerateStartingWith("")
+}
+
+func interactiveGenerateStartingWith(firstLine string) int {
 	fmt.Fprintln(os.Stderr, "Generate an image from a prompt.")
-	prompt, err := promptLine("Image prompt", "", true)
+	prompt, err := promptMultilineStartingWith("Image prompt", firstLine)
 	if err != nil {
 		return emitFailure("generate", err, false)
 	}
@@ -143,7 +259,7 @@ func interactiveGenerate() int {
 // overrides) when the user ran `gpt-image generate` without a prompt on a TTY.
 func fillGenerateInteractively(output *string, common *commonFlags) (prompt string, err error) {
 	fmt.Fprintln(os.Stderr, "Missing required args — answer each prompt (Enter accepts defaults).")
-	prompt, err = promptLine("Image prompt", "", true)
+	prompt, err = promptMultiline("Image prompt")
 	if err != nil {
 		return "", err
 	}
@@ -188,7 +304,7 @@ func interactiveEdit() int {
 		}
 		images = append(images, p)
 	}
-	prompt, err := promptLine("Edit instruction", "", true)
+	prompt, err := promptMultiline("Edit instruction")
 	if err != nil {
 		return emitFailure("edit", err, false)
 	}
@@ -239,7 +355,7 @@ func fillEditInteractively(images *[]string, prompt *string, output *string, com
 		}
 	}
 	if strings.TrimSpace(*prompt) == "" {
-		p, err := promptLine("Edit instruction", "", true)
+		p, err := promptMultiline("Edit instruction")
 		if err != nil {
 			return err
 		}

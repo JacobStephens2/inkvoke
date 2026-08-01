@@ -23,7 +23,7 @@ import (
 //go:embed agents.md
 var agentsHelp string
 
-const version = "0.3.1"
+const version = "0.3.2"
 
 var (
 	qualities = map[string]bool{"low": true, "medium": true, "high": true, "auto": true}
