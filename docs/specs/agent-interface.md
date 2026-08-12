@@ -36,8 +36,8 @@ caller depends on a formatting decision the tool never promised to keep.
 interface.** The agent read `README.md`, concluded that arbitrary output
 dimensions and local format control were unavailable, generated at
 `1536x1024` PNG, and then cropped and re-encoded with Pillow to reach a
-1280x648 JPEG under 100KB. Every one of those steps was avoidable:
-`--size 1280x648` and `--output-format jpeg` already exist and are visible in
+1280x640 JPEG under 100KB. Every one of those steps was avoidable:
+`--size 1280x640` and `--output-format jpeg` already exist and are visible in
 `inkvoke generate --help`. The README's usage section shows a few
 representative flags, so a caller who treats it as the interface will
 re-implement behaviour the binary already has, and will pull in exactly the
@@ -66,7 +66,7 @@ independent and orthogonal.
   "output": "/abs/path/out.jpg",
   "bytes": 66623,
   "model": "gpt-image-2",
-  "size": "1280x648",
+  "size": "1280x640",
   "quality": "high",
   "output_format": "jpeg",
   "elapsed_seconds": 99.2,

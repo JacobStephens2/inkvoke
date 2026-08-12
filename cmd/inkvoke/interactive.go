@@ -321,7 +321,7 @@ func interactiveGenerateStartingWith(firstLine string) int {
 	if err != nil {
 		return emitFailure("generate", err, false)
 	}
-	size, err := promptLine("Size (auto, 1024x1024, 1536x1024, 1024x1536, or WIDTHxHEIGHT)", "auto", false)
+	size, err := promptLine("Size (auto, 1024x1024, 1536x1024, 1024x1536, or WIDTHxHEIGHT with both divisible by 16)", "auto", false)
 	if err != nil {
 		return emitFailure("generate", err, false)
 	}
@@ -358,7 +358,7 @@ func fillGenerateInteractively(output *string, common *commonFlags) (prompt stri
 		return "", err
 	}
 	common.quality = q
-	sz, err := promptLine("Size (auto, 1024x1024, 1536x1024, 1024x1536, or WIDTHxHEIGHT)", common.size, false)
+	sz, err := promptLine("Size (auto, 1024x1024, 1536x1024, 1024x1536, or WIDTHxHEIGHT with both divisible by 16)", common.size, false)
 	if err != nil {
 		return "", err
 	}

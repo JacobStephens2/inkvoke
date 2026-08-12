@@ -12,6 +12,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -32,6 +33,37 @@ var (
 	}
 	formats = map[string]bool{"png": true, "jpeg": true, "webp": true}
 )
+
+// The images API rejects any free-form size whose width or height is not
+// divisible by 16 ("Invalid size '1280x648'. Width and height must both be
+// divisible by 16."). Checking locally turns a network round trip into an
+// instant usage error that names the rule.
+const sizeMultiple = 16
+
+// validateSize accepts the documented presets or a free-form WIDTHxHEIGHT that
+// the API will actually take.
+func validateSize(size string) error {
+	if sizes[size] {
+		return nil
+	}
+	badSize := usagef("invalid --size %q (want auto, 1024x1024, 1536x1024, 1024x1536, or WIDTHxHEIGHT)", size)
+	wStr, hStr, ok := strings.Cut(size, "x")
+	if !ok {
+		return badSize
+	}
+	w, err := strconv.Atoi(wStr)
+	if err != nil || w < 1 {
+		return badSize
+	}
+	h, err := strconv.Atoi(hStr)
+	if err != nil || h < 1 {
+		return badSize
+	}
+	if w%sizeMultiple != 0 || h%sizeMultiple != 0 {
+		return usagef("invalid --size %q: width and height must both be divisible by %d (e.g. 1280x640)", size, sizeMultiple)
+	}
+	return nil
+}
 
 func main() {
 	// Transition alias: release ships dual-named assets; old argv0 prints stderr-only.
@@ -146,7 +178,7 @@ Environment:
 
 Examples:
   inkvoke generate "a lighthouse in a storm, gouache" --output lighthouse.png --quality high --size 1536x1024
-  inkvoke generate "…" --output out.jpg --size 1280x648 --output-format jpeg --json
+  inkvoke generate "…" --output out.jpg --size 1280x640 --output-format jpeg --json
   inkvoke edit photo.jpg --prompt "make the sky golden hour" --output golden.png
   inkvoke batch manifest.json --output-dir outputs --workers 3 --skip-existing
 `)
@@ -185,7 +217,7 @@ func addCommonFlags(fs *flag.FlagSet, c *commonFlags) {
 	}
 	fs.StringVar(&c.model, "model", modelDef, "OpenAI image model")
 	fs.StringVar(&c.quality, "quality", qualityDef, "Quality: low, medium, high, auto")
-	fs.StringVar(&c.size, "size", sizeDef, "Size: auto, 1024x1024, 1536x1024, 1024x1536, or WIDTHxHEIGHT for gpt-image-2")
+	fs.StringVar(&c.size, "size", sizeDef, "Size: auto, 1024x1024, 1536x1024, 1024x1536, or WIDTHxHEIGHT for gpt-image-2 (both divisible by 16)")
 	fs.StringVar(&c.outputFormat, "output-format", formatDef, "Output format: png, jpeg, webp")
 	fs.StringVar(&c.apiKeyFile, "api-key-file", "", "File containing the OpenAI API key (else OPENAI_API_KEY, else interactive prompt)")
 	fs.BoolVar(&c.noCost, "no-cost", false, "Do not print estimated USD cost / token usage")
@@ -202,11 +234,8 @@ func (c *commonFlags) validate() error {
 		return usagef("invalid --output-format %q (want png|jpeg|webp)", c.outputFormat)
 	}
 	// Allow documented presets or free-form WIDTHxHEIGHT (gpt-image-2).
-	if !sizes[c.size] {
-		var w, h int
-		if _, err := fmt.Sscanf(c.size, "%dx%d", &w, &h); err != nil || w < 1 || h < 1 {
-			return usagef("invalid --size %q", c.size)
-		}
+	if err := validateSize(c.size); err != nil {
+		return err
 	}
 	if c.timeoutSec < 30 {
 		return usagef("invalid --timeout %d (want >= 30 seconds)", c.timeoutSec)
@@ -799,6 +828,9 @@ Flags:
 			opts.Quality = item.Quality
 		}
 		if item.Size != "" {
+			if err := validateSize(item.Size); err != nil {
+				return emitFailure(command, usagef("item %s: %v", item.ID, err), jsonMode)
+			}
 			opts.Size = item.Size
 		}
 		sources, err := parseEditFrom(item.EditFrom)

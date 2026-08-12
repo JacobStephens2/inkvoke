@@ -71,7 +71,7 @@ func TestEmitWroteJSON(t *testing.T) {
 			},
 		},
 	}
-	opts := RequestOptions{Model: defaultModel, Quality: "high", Size: "1280x648", OutputFormat: "png"}
+	opts := RequestOptions{Model: defaultModel, Quality: "high", Size: "1280x640", OutputFormat: "png"}
 	out := captureStdout(t, func() {
 		emitWrote("generate", path, result, opts, 12*time.Second, true, false)
 	})
