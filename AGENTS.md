@@ -12,7 +12,7 @@ export OPENAI_API_KEY="..."          # or pass --api-key-file /path/to/key
 # Humans may also run bare `inkvoke` for a progressive wizard (TTY only). Agents: always pass full args.
 
 inkvoke generate "<prompt>" --output out.jpg \
-  --size 1280x648 --output-format jpeg --quality high --json
+  --size 1280x640 --output-format jpeg --quality high --json
 ```
 
 ## The whole flag surface
@@ -24,7 +24,7 @@ shell out to ImageMagick, Pillow, or a wrapper script:
 
 | Need | Flag | Note |
 | --- | --- | --- |
-| Exact pixel dimensions | `--size WIDTHxHEIGHT` | `gpt-image-2` accepts arbitrary sizes; other models take the fixed set. Ask for the aspect ratio you want rather than cropping afterwards. |
+| Exact pixel dimensions | `--size WIDTHxHEIGHT` | `gpt-image-2` takes any size whose width **and** height are both divisible by 16 (`1280x640` yes, `1280x648` no); other models take the fixed set. inkvoke rejects a bad size locally as a usage error (exit 1) before calling the API. Ask for the aspect ratio you want rather than cropping afterwards. |
 | JPEG or WebP instead of PNG | `--output-format jpeg\|webp` | Requested from the API. A PNG you convert locally is a wasted step. |
 | Machine-readable result | `--json` | Exactly one JSON object on stdout. Heartbeats stay on stderr. Prefer this over scraping the human line. |
 | No progress output | `--quiet` | Heartbeats go to stderr; suppressing them is not required to keep stdout clean under `--json`. |
@@ -72,7 +72,7 @@ Always pass `--json`. Successful `generate` / `edit` / `hair-color` stdout:
   "output": "/abs/path/out.jpg",
   "bytes": 66623,
   "model": "gpt-image-2",
-  "size": "1280x648",
+  "size": "1280x640",
   "quality": "high",
   "output_format": "jpeg",
   "elapsed_seconds": 99.2,

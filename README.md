@@ -175,7 +175,7 @@ Generate with machine-readable stdout (agents):
 
 ```bash
 inkvoke generate "a lighthouse in a storm, gouache" \
-  --output lighthouse.jpg --size 1280x648 --output-format jpeg \
+  --output lighthouse.jpg --size 1280x640 --output-format jpeg \
   --quality high --json
 ```
 
@@ -221,6 +221,10 @@ A JSON list (or an object with an `"images"` list). Each item needs a `prompt`; 
 
 - Model `gpt-image-2`, quality `auto`, size `auto`, format `png`.
 - `hair-color` defaults quality to `medium`.
+
+## Sizes
+
+`--size` takes `auto`, one of the presets `1024x1024` / `1536x1024` / `1024x1536`, or, on `gpt-image-2`, any `WIDTHxHEIGHT` whose **width and height are both divisible by 16**. So `1280x640` works and `1280x648` does not - the API rejects it with `Invalid size '1280x648'. Width and height must both be divisible by 16.` inkvoke checks this before the request and fails as a usage error (exit 1), so a bad size costs nothing and no round trip. The same rule applies to a per-item `size` in a batch manifest.
 
 ## Cost in CLI output
 
