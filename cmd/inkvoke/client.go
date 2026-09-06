@@ -16,8 +16,9 @@ import (
 	"time"
 )
 
+var apiBase = "https://api.openai.com/v1"
+
 const (
-	apiBase        = "https://api.openai.com/v1"
 	defaultTimeout = 300 * time.Second // high-quality gpt-image-2 often needs 1–3+ minutes
 	retryAttempts  = 3
 	retryBaseDelay = 5 * time.Second
@@ -79,6 +80,7 @@ type RequestOptions struct {
 	Quality      string
 	Size         string
 	OutputFormat string
+	Background   string
 }
 
 // ImageResult is a successful Images API response with at least one b64 image.
@@ -96,6 +98,9 @@ func (c *Client) Generate(ctx context.Context, prompt string, opts RequestOption
 		"size":          opts.Size,
 		"output_format": opts.OutputFormat,
 		"n":             1,
+	}
+	if opts.Background != "" {
+		body["background"] = opts.Background
 	}
 	return c.requestWithRetry(ctx, "generate", func(ctx context.Context) (*ImageResult, error) {
 		return c.postJSON(ctx, apiBase+"/images/generations", body)
@@ -220,6 +225,9 @@ func (c *Client) postEditMultipart(ctx context.Context, images []string, prompt 
 	_ = w.WriteField("quality", opts.Quality)
 	_ = w.WriteField("size", opts.Size)
 	_ = w.WriteField("output_format", opts.OutputFormat)
+	if opts.Background != "" {
+		_ = w.WriteField("background", opts.Background)
+	}
 
 	if err := w.Close(); err != nil {
 		return nil, err

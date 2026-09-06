@@ -69,6 +69,7 @@ independent and orthogonal.
   "size": "1280x640",
   "quality": "high",
   "output_format": "jpeg",
+  "background": "auto",
   "elapsed_seconds": 99.2,
   "usage": { "text_input_tokens": 142, "image_output_tokens": 5488 },
   "cost_usd_estimate": 0.1653,

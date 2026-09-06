@@ -26,6 +26,7 @@ shell out to ImageMagick, Pillow, or a wrapper script:
 | --- | --- | --- |
 | Exact pixel dimensions | `--size WIDTHxHEIGHT` | `gpt-image-2` takes any size whose width **and** height are both divisible by 16 (`1280x640` yes, `1280x648` no); other models take the fixed set. inkvoke rejects a bad size locally as a usage error (exit 1) before calling the API. Ask for the aspect ratio you want rather than cropping afterwards. |
 | JPEG or WebP instead of PNG | `--output-format jpeg\|webp` | Requested from the API. A PNG you convert locally is a wasted step. |
+| Transparent background | `--background auto\|transparent\|opaque` | Requested from the API (`gpt-image-2`, PNG or WebP only). Omit background removal pipelines. `--background transparent` with `--output-format jpeg` is rejected locally as a usage error (exit 1). Also supported per item in `batch` manifests. |
 | Machine-readable result | `--json` | Exactly one JSON object on stdout. Heartbeats stay on stderr. Prefer this over scraping the human line. |
 | No progress output | `--quiet` | Heartbeats go to stderr; suppressing them is not required to keep stdout clean under `--json`. |
 | Longer/shorter deadline | `--timeout <seconds>` | Default 300. |
@@ -75,6 +76,7 @@ Always pass `--json`. Successful `generate` / `edit` / `hair-color` stdout:
   "size": "1280x640",
   "quality": "high",
   "output_format": "jpeg",
+  "background": "auto",
   "elapsed_seconds": 99.2,
   "usage": { "text_input_tokens": 142, "image_output_tokens": 5488 },
   "cost_usd_estimate": 0.1653
@@ -95,3 +97,18 @@ success. Do not regex the human cost line; it is not a contract.
   or SVG over the generated image instead of prompting for them.
 - One image per call. Do not loop `generate` to "try again" without changing the
   prompt; you are paying per attempt.
+
+## Agent skills
+
+### Issue tracker
+
+Tracked in GitHub Issues (`JacobStephens2/inkvoke`) using the `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Canonical triage roles mapped 1:1 to default labels (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`). See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context layout (`CONTEXT.md` and `docs/adr/` at repo root). See `docs/agents/domain.md`.
+
