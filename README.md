@@ -185,11 +185,17 @@ Edit (one or more input images):
 inkvoke edit photo.jpg --prompt "make the sky golden hour" --output golden.png
 ```
 
+Generate with transparent background (PNG or WebP only):
+
+```bash
+inkvoke generate "a wooden chair, isolated subject" --output chair.png --background transparent
+```
+
 Batch from a manifest:
 
 ```bash
 inkvoke batch manifest.json --output-dir outputs \
-  --quality high --size 1536x1024 --workers 3 --skip-existing
+  --quality high --size 1536x1024 --background transparent --workers 3 --skip-existing
 ```
 
 `--dry-run` prints the plan without calling the API. `inkvoke version` reports the default model; add `--json` for a structured version envelope.
@@ -208,19 +214,26 @@ A JSON list (or an object with an `"images"` list). Each item needs a `prompt`; 
 [
   {"id": "cover", "prompt": "a stone house on a sea cliff at dawn"},
   {"id": "recolor", "prompt": "make the door red", "edit_from": "inputs/house.png",
-   "quality": "medium", "size": "1024x1024", "output": "outputs/red-door.png"}
+   "quality": "medium", "size": "1024x1024", "output": "outputs/red-door.png"},
+  {"id": "asset", "prompt": "an icon of a golden coin", "background": "transparent"}
 ]
 ```
 
 - `id` names the output file (`<output-dir>/<id>.<format>`) when `output` is not set.
 - `edit_from` (path or list of paths) switches that item from generate to edit.
-- Per-item `quality`/`size` override the command-line flags.
+- Per-item `quality`/`size`/`background` override the command-line flags.
 - Failed items retry twice with backoff; the exit code is non-zero if any still fail.
 
 ## Defaults
 
-- Model `gpt-image-2`, quality `auto`, size `auto`, format `png`.
+- Model `gpt-image-2`, quality `auto`, size `auto`, format `png`, background `auto`.
 - `hair-color` defaults quality to `medium`.
+
+## Background transparency
+
+`--background` takes `auto`, `transparent`, or `opaque` (`gpt-image-2`, PNG or WebP only).
+
+Requesting `--background transparent` with `--output-format jpeg` is rejected locally as a usage error (exit code 1) before making any API call. In `batch` manifests, set the `background` key per item, or pass `--background` to set the default for the entire run.
 
 ## Sizes
 

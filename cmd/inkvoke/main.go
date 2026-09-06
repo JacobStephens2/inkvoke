@@ -24,14 +24,15 @@ import (
 //go:embed agents.md
 var agentsHelp string
 
-const version = "1.0.1"
+const version = "1.1.0"
 
 var (
 	qualities = map[string]bool{"low": true, "medium": true, "high": true, "auto": true}
 	sizes     = map[string]bool{
 		"auto": true, "1024x1024": true, "1536x1024": true, "1024x1536": true,
 	}
-	formats = map[string]bool{"png": true, "jpeg": true, "webp": true}
+	formats     = map[string]bool{"png": true, "jpeg": true, "webp": true}
+	backgrounds = map[string]bool{"auto": true, "transparent": true, "opaque": true}
 )
 
 // The images API rejects any free-form size whose width or height is not
@@ -61,6 +62,19 @@ func validateSize(size string) error {
 	}
 	if w%sizeMultiple != 0 || h%sizeMultiple != 0 {
 		return usagef("invalid --size %q: width and height must both be divisible by %d (e.g. 1280x640)", size, sizeMultiple)
+	}
+	return nil
+}
+
+func validateBackground(bg, format string) error {
+	if bg == "" {
+		bg = "auto"
+	}
+	if !backgrounds[bg] {
+		return usagef("invalid --background %q (want auto|transparent|opaque)", bg)
+	}
+	if bg == "transparent" && format == "jpeg" {
+		return usagef("invalid --background %q: transparent background is not supported with jpeg (use png or webp)", bg)
 	}
 	return nil
 }
@@ -189,6 +203,7 @@ type commonFlags struct {
 	quality      string
 	size         string
 	outputFormat string
+	background   string
 	apiKeyFile   string
 	noCost       bool
 	quiet        bool
@@ -198,7 +213,7 @@ type commonFlags struct {
 
 func addCommonFlags(fs *flag.FlagSet, c *commonFlags) {
 	// Pre-set fields on c become flag defaults (hair-color uses quality medium).
-	modelDef, qualityDef, sizeDef, formatDef := c.model, c.quality, c.size, c.outputFormat
+	modelDef, qualityDef, sizeDef, formatDef, bgDef := c.model, c.quality, c.size, c.outputFormat, c.background
 	if modelDef == "" {
 		modelDef = defaultModel
 	}
@@ -211,6 +226,9 @@ func addCommonFlags(fs *flag.FlagSet, c *commonFlags) {
 	if formatDef == "" {
 		formatDef = "png"
 	}
+	if bgDef == "" {
+		bgDef = "auto"
+	}
 	timeoutDef := c.timeoutSec
 	if timeoutDef <= 0 {
 		timeoutDef = int(defaultTimeout / time.Second)
@@ -219,6 +237,7 @@ func addCommonFlags(fs *flag.FlagSet, c *commonFlags) {
 	fs.StringVar(&c.quality, "quality", qualityDef, "Quality: low, medium, high, auto")
 	fs.StringVar(&c.size, "size", sizeDef, "Size: auto, 1024x1024, 1536x1024, 1024x1536, or WIDTHxHEIGHT for gpt-image-2 (both divisible by 16)")
 	fs.StringVar(&c.outputFormat, "output-format", formatDef, "Output format: png, jpeg, webp")
+	fs.StringVar(&c.background, "background", bgDef, "Background transparency: auto, transparent, opaque (PNG or WebP only)")
 	fs.StringVar(&c.apiKeyFile, "api-key-file", "", "File containing the OpenAI API key (else OPENAI_API_KEY, else interactive prompt)")
 	fs.BoolVar(&c.noCost, "no-cost", false, "Do not print estimated USD cost / token usage")
 	fs.BoolVar(&c.quiet, "quiet", false, "Suppress progress heartbeats on stderr")
@@ -232,6 +251,9 @@ func (c *commonFlags) validate() error {
 	}
 	if !formats[c.outputFormat] {
 		return usagef("invalid --output-format %q (want png|jpeg|webp)", c.outputFormat)
+	}
+	if err := validateBackground(c.background, c.outputFormat); err != nil {
+		return err
 	}
 	// Allow documented presets or free-form WIDTHxHEIGHT (gpt-image-2).
 	if err := validateSize(c.size); err != nil {
@@ -259,6 +281,7 @@ func (c *commonFlags) options() RequestOptions {
 		Quality:      c.quality,
 		Size:         c.size,
 		OutputFormat: c.outputFormat,
+		Background:   c.background,
 	}
 }
 
@@ -653,8 +676,9 @@ type manifestItem struct {
 	Prompt   string          `json:"prompt"`
 	Output   string          `json:"output"`
 	Quality  string          `json:"quality"`
-	Size     string          `json:"size"`
-	EditFrom json.RawMessage `json:"edit_from"`
+	Size       string          `json:"size"`
+	EditFrom   json.RawMessage `json:"edit_from"`
+	Background string          `json:"background"`
 }
 
 func loadManifest(path string) ([]manifestItem, error) {
@@ -833,6 +857,12 @@ Flags:
 			}
 			opts.Size = item.Size
 		}
+		if item.Background != "" {
+			opts.Background = item.Background
+		}
+		if err := validateBackground(opts.Background, opts.OutputFormat); err != nil {
+			return emitFailure(command, usagef("item %s: %v", item.ID, err), jsonMode)
+		}
 		sources, err := parseEditFrom(item.EditFrom)
 		if err != nil {
 			return emitFailure(command, usagef("item %s: %v", item.ID, err), jsonMode)
@@ -849,14 +879,15 @@ Flags:
 					mode = "edit"
 				}
 				plan = append(plan, resultEnvelope{
-					OK:      true,
-					ID:      j.item.ID,
-					Output:  absPath(j.output),
-					Model:   j.options.Model,
-					Size:    j.options.Size,
-					Quality: j.options.Quality,
-					Mode:    mode,
-					Prompt:  j.item.Prompt,
+					OK:         true,
+					ID:         j.item.ID,
+					Output:     absPath(j.output),
+					Model:      j.options.Model,
+					Size:       j.options.Size,
+					Quality:    j.options.Quality,
+					Background: j.options.Background,
+					Mode:       mode,
+					Prompt:     j.item.Prompt,
 				})
 			}
 			writeJSON(resultEnvelope{OK: true, Command: command, DryRun: true, Results: plan})

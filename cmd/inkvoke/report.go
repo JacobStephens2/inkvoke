@@ -24,6 +24,7 @@ type resultEnvelope struct {
 	Size            string          `json:"size,omitempty"`
 	Quality         string          `json:"quality,omitempty"`
 	OutputFormat    string          `json:"output_format,omitempty"`
+	Background      string          `json:"background,omitempty"`
 	ElapsedSeconds  float64         `json:"elapsed_seconds,omitempty"`
 	Usage           *usageEnvelope  `json:"usage,omitempty"`
 	CostUSDEstimate *float64        `json:"cost_usd_estimate,omitempty"`
@@ -123,6 +124,7 @@ func emitWrote(command, path string, result *ImageResult, opts RequestOptions, e
 			Size:           opts.Size,
 			Quality:        opts.Quality,
 			OutputFormat:   opts.OutputFormat,
+			Background:     opts.Background,
 			ElapsedSeconds: elapsed.Seconds(),
 			RevisedPrompt:  revisedPromptOf(result),
 		}
@@ -193,6 +195,7 @@ func itemSuccess(id, path string, result *ImageResult, opts RequestOptions, elap
 		Size:           opts.Size,
 		Quality:        opts.Quality,
 		OutputFormat:   opts.OutputFormat,
+		Background:     opts.Background,
 		ElapsedSeconds: elapsed.Seconds(),
 		RevisedPrompt:  revisedPromptOf(result),
 	}
