@@ -95,3 +95,18 @@ success. Do not regex the human cost line; it is not a contract.
   or SVG over the generated image instead of prompting for them.
 - One image per call. Do not loop `generate` to "try again" without changing the
   prompt; you are paying per attempt.
+
+## Agent skills
+
+### Issue tracker
+
+Tracked in GitHub Issues (`JacobStephens2/inkvoke`) using the `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Canonical triage roles mapped 1:1 to default labels (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`). See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context layout (`CONTEXT.md` and `docs/adr/` at repo root). See `docs/agents/domain.md`.
+
