@@ -10,6 +10,7 @@ import (
 	"io"
 	"mime/multipart"
 	"net/http"
+	"net/textproto"
 	"os"
 	"path/filepath"
 	"strings"
@@ -255,7 +256,23 @@ func writeFilePart(w *multipart.Writer, field, path string) error {
 		return fmt.Errorf("open %s: %w", path, err)
 	}
 	defer f.Close()
-	part, err := w.CreateFormFile(field, filepath.Base(path))
+
+	ext := strings.ToLower(filepath.Ext(path))
+	contentType := "application/octet-stream"
+	switch ext {
+	case ".png":
+		contentType = "image/png"
+	case ".jpg", ".jpeg":
+		contentType = "image/jpeg"
+	case ".webp":
+		contentType = "image/webp"
+	}
+
+	h := make(textproto.MIMEHeader)
+	h.Set("Content-Disposition", fmt.Sprintf(`form-data; name="%s"; filename="%s"`, strings.ReplaceAll(field, `"`, `\"`), strings.ReplaceAll(filepath.Base(path), `"`, `\"`)))
+	h.Set("Content-Type", contentType)
+
+	part, err := w.CreatePart(h)
 	if err != nil {
 		return err
 	}
